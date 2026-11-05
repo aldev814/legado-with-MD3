@@ -1,0 +1,64 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index f75333b61b2952207709bec0871b7475e36ef494..363a7882b8164bdaeb0ccc5baacfa6d1625b05ac 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -60,7 +60,7 @@
+     }
+ 
+     defaultConfig {
+-        applicationId = "io.legato.kazusa"
++        applicationId = "io.legato.kazusa.ireader"
+         minSdk = 26
+         targetSdk = 37
+         versionCode = System.getenv("COMMIT_NUMBER")?.toInt()?.let { 10000 + it } ?: 32640
+diff --git a/app/src/main/java/io/legado/app/help/update/AppUpdateGitHub.kt b/app/src/main/java/io/legado/app/help/update/AppUpdateGitHub.kt
+index 525e77bb5dd9db33179ef17d6608c1cdea5fa729..048c8b5d6440ed7efa6cfe135147790202cf3905 100644
+--- a/app/src/main/java/io/legado/app/help/update/AppUpdateGitHub.kt
++++ b/app/src/main/java/io/legado/app/help/update/AppUpdateGitHub.kt
+@@ -24,7 +24,7 @@
+ 
+     private val otherSettingsGateway get() = org.koin.core.context.GlobalContext.get().get<io.legado.app.domain.gateway.OtherSettingsGateway>()
+ 
+-    private const val repoPath = "HapeLee/legado-with-MD3"
++    private const val repoPath = "aldev814/legado-with-MD3"
+     private const val githubApiBaseUrl = "https://api.github.com/repos/$repoPath/releases"
+     private const val manifestTimeoutMillis = 2500L
+     private const val checkTimeoutMillis = 15000L
+diff --git a/app/src/main/java/io/legado/app/constant/AppConst.kt b/app/src/main/java/io/legado/app/constant/AppConst.kt
+index 1099a7b89e6cbf33caa0b3ad67c0b49d29035be6..0dacf0a9499bfa412c0e0b0d5808d913c4cca5d4 100644
+--- a/app/src/main/java/io/legado/app/constant/AppConst.kt
++++ b/app/src/main/java/io/legado/app/constant/AppConst.kt
+@@ -29,7 +29,7 @@
+     const val DEFAULT_WEBDAV_ID = -1L
+ 
+     private const val OFFICIAL_SIGNATURE =
+-        "8DACBF25EC667C9B1374DB1450C1A866C2AAA1173016E80BF6AD2F06FABDDC08"
++        "326B8B72048A9507EEF32B032FEDCEEFB68FD89C6E4174DCD41436320A0929AD"
+     private const val BETA_SIGNATURE =
+         "93A28468B0F69E8D14C8A99AB45841CEF902BBBA3761BBFEE02E67CBA801563E"
+ 
+diff --git a/app/src/test/java/io/legado/app/help/update/AppUpdateGitHubTest.kt b/app/src/test/java/io/legado/app/help/update/AppUpdateGitHubTest.kt
+index b94f5990124273fbef6e60c67904f05557ea313d..9ef04680d688eb547c7c2029c97ea9d4c34aa160 100644
+--- a/app/src/test/java/io/legado/app/help/update/AppUpdateGitHubTest.kt
++++ b/app/src/test/java/io/legado/app/help/update/AppUpdateGitHubTest.kt
+@@ -2,10 +2,20 @@
+ 
+ import okhttp3.Headers
+ import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
+ import org.junit.Test
+ import java.time.ZoneOffset
+ 
+ class AppUpdateGitHubTest {
++    @Test
++    fun `fork patch versions advance numerically and then follow the next upstream release`() {
++        with(AppUpdateGitHub) {
++            assertEquals(0, "3.26.23-ireader.1".versionCompare("3.26.23-ireader.1"))
++            assertTrue("3.26.23-ireader.10".versionCompare("3.26.23-ireader.9") > 0)
++            assertTrue("3.26.24-ireader.1".versionCompare("3.26.23-ireader.999") > 0)
++        }
++    }
++
+ 
+     @Test
+     fun `primary rate limit reports reset time`() {

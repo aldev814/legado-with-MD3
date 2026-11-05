@@ -1,0 +1,187 @@
+name: iReader - Patch and release upstream stable
+
+on:
+  push:
+    branches: [main, codex/ireader-automation]
+    paths:
+      - '.github/ireader/**'
+      - '.github/workflows/ireader-release.yml'
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Published stable upstream tag (empty = latest)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ireader-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    if: github.repository == 'aldev814/legado-with-MD3'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      needed: ${{ steps.plan.outputs.needed }}
+      upstream_commit: ${{ steps.plan.outputs.upstream_commit }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      commit_number: ${{ steps.plan.outputs.commit_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect latest published stable Release (never main)
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+        run: python3 .github/ireader/release.py --tag "$REQUESTED_TAG" --output release-plan.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ireader-release-plan
+          path: release-plan.json
+          retention-days: 14
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - product: Core
+            label: core
+          - product: Comic
+            label: comic
+    name: Build and verify (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Require fixed signing secrets before downloading or building
+        env:
+          KEY: ${{ secrets.IREADER_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.IREADER_KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KEY" && test -n "$PASSWORD" || {
+            echo 'Configure IREADER_KEYSTORE_BASE64 and IREADER_KEYSTORE_PASSWORD.' >&2
+            exit 1
+          }
+      - name: Check out trusted patch recipe
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: control
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ireader-release-plan
+          path: plan
+      - name: Check out immutable upstream Release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: HapeLee/legado-with-MD3
+          ref: ${{ needs.detect.outputs.upstream_commit }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - name: Install required Android SDK packages
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.0' 'platforms;android-37.1' 'build-tools;36.0.0'
+          set -o pipefail
+      - name: Test release automation
+        run: python3 -m unittest discover -s control/.github/ireader/tests -v
+      - name: Apply patches and record exact source (stop on any conflict)
+        run: |
+          python3 control/.github/ireader/prepare_source.py source plan/release-plan.json
+          python3 control/.github/ireader/package_source.py source artifacts plan/release-plan.json
+      - name: Run unit tests, lint, architecture check and Release/R8 build
+        working-directory: source
+        env:
+          APP_VERSION_NAME: ${{ needs.detect.outputs.release_tag }}
+          COMMIT_NUMBER: ${{ needs.detect.outputs.commit_number }}
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          ./gradlew \
+            ":app:testApp${PRODUCT}DebugUnitTest" \
+            ":app:lintApp${PRODUCT}Debug" \
+            verifyConfigArchitecture \
+            ":app:assembleApp${PRODUCT}Release" \
+            --max-workers=1 --no-parallel --no-daemon --no-configuration-cache \
+            '-Pkotlin.daemon.jvmargs=-Xmx6g -Xms256m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC'
+      - name: Sign and verify product APKs and retain its R8 mapping
+        env:
+          IREADER_KEYSTORE_BASE64: ${{ secrets.IREADER_KEYSTORE_BASE64 }}
+          IREADER_KEYSTORE_PASSWORD: ${{ secrets.IREADER_KEYSTORE_PASSWORD }}
+          PRODUCT: ${{ matrix.label }}
+        run: python3 control/.github/ireader/sign.py source artifacts plan/release-plan.json "$PRODUCT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ireader-build-${{ matrix.label }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ireader-diagnostics-${{ matrix.label }}
+          path: |
+            source/app/build/reports/
+            source/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: [detect, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: control
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ireader-build-*
+          path: packages
+      - name: Require matching core and comic provenance
+        run: python3 control/.github/ireader/merge_artifacts.py packages artifacts
+      - name: Publish verified APKs, exact source, checksums and mappings
+        working-directory: control
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
+        run: bash .github/ireader/publish.sh
+
+  update-manifest:
+    needs: [detect, publish]
+    if: >-
+      always() && github.ref == 'refs/heads/main' && needs.detect.result == 'success' &&
+      (needs.detect.outputs.needed == 'false' || needs.publish.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reconcile app update manifest (also retries after an earlier publication)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
+        run: bash .github/scripts/publish-update-manifest.sh official "$RELEASE_TAG"

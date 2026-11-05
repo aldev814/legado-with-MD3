@@ -1,0 +1,1088 @@
+diff --git a/app/src/main/java/io/legado/app/constant/PageAnim.kt b/app/src/main/java/io/legado/app/constant/PageAnim.kt
+index 67383556ea21b21387a565dbb257ba241808e4d9..fc3ab4d905c01da91a6ac5d17f2427a89c609368 100644
+--- a/app/src/main/java/io/legado/app/constant/PageAnim.kt
++++ b/app/src/main/java/io/legado/app/constant/PageAnim.kt
+@@ -18,6 +18,7 @@ object PageAnim {
+     const val iosCurlPageAnim = 6
+     const val googleCurlPageAnim = 7
+     const val parallaxPageAnim = 8
++    const val waterRipplePageAnim = 9
+ 
+     @Target(AnnotationTarget.VALUE_PARAMETER)
+     @Retention(AnnotationRetention.SOURCE)
+@@ -31,6 +32,7 @@ object PageAnim {
+         iosCurlPageAnim,
+         googleCurlPageAnim,
+         parallaxPageAnim,
++        waterRipplePageAnim,
+     )
+     annotation class Anim
+ 
+diff --git a/app/src/main/java/io/legado/app/data/repository/ReadBookStyleConfigRepository.kt b/app/src/main/java/io/legado/app/data/repository/ReadBookStyleConfigRepository.kt
+index ec0273016e272a4632349154bbf83d469a8a0f37..8d8a1e3112d5764f7322d30a472e5544a3d7736d 100644
+--- a/app/src/main/java/io/legado/app/data/repository/ReadBookStyleConfigRepository.kt
++++ b/app/src/main/java/io/legado/app/data/repository/ReadBookStyleConfigRepository.kt
+@@ -371,6 +371,7 @@ class ReadBookStyleConfigRepository(
+             ReadStyleIntKey.FooterFontSize -> mutateEffective { it.copy(footerFontSize = value) }
+             ReadStyleIntKey.PageAnim -> mutateEffective { it.withCurPageAnim(value) }
+             ReadStyleIntKey.PageAnimSpeed -> mutateEffective { it.withPageAnimSpeed(value) }
++            ReadStyleIntKey.WaterRippleSpeed -> mutateEffective { it.withWaterRippleSpeed(value) }
+             ReadStyleIntKey.UnderlineHeight -> mutateEffective { it.copy(underlineHeight = value) }
+             ReadStyleIntKey.UnderlinePadding -> mutateEffective { it.copy(underlinePadding = value) }
+             ReadStyleIntKey.PaddingTop -> mutateEffective { it.copy(paddingTop = value) }
+diff --git a/app/src/main/java/io/legado/app/domain/gateway/ReadStyleMutation.kt b/app/src/main/java/io/legado/app/domain/gateway/ReadStyleMutation.kt
+index 448c56579f7858890c7a6772dd508960ae33e516..3f78aadf1c24dd2d2ace04061c9d1c9de08a2480 100644
+--- a/app/src/main/java/io/legado/app/domain/gateway/ReadStyleMutation.kt
++++ b/app/src/main/java/io/legado/app/domain/gateway/ReadStyleMutation.kt
+@@ -35,6 +35,7 @@ enum class ReadStyleIntKey {
+     FooterFontSize,
+     PageAnim,
+     PageAnimSpeed,
++    WaterRippleSpeed,
+     UnderlineHeight,
+     UnderlinePadding,
+     PaddingTop,
+diff --git a/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt b/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
+index 22a3cfad34d960ddf2331086670d3e5c24ae6275..c6fcee3da27987123c4de8e995e04a73681e9aa7 100644
+--- a/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
++++ b/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
+@@ -215,6 +215,9 @@ fun ReaderCanvasSurface(
+     modifier: Modifier = Modifier,
+     onPreviousPage: () -> ReaderPageWindow?,
+     onNextPage: () -> ReaderPageWindow?,
++    /** Called synchronously after navigation succeeds and before the destination can draw. */
++    onPageCommitted: (ReaderTurnDirection, ReaderPageWindow, ReaderPageWindow?) -> Unit = { _, _, _ -> },
++    waterRipple: Boolean = false,
+     onPageBoundaryReached: (ReaderTurnDirection) -> Unit,
+     /**
+      * 书中业务上是否存在邻章（对照旧 View `ReadView.hasNextChapter()` / `hasPrevChapter()`）。
+@@ -309,6 +312,7 @@ fun ReaderCanvasSurface(
+     var pendingTurnOrigin by remember { mutableStateOf<ReaderPageId?>(null) }
+     val latestPreviousPage by rememberUpdatedState(onPreviousPage)
+     val latestNextPage by rememberUpdatedState(onNextPage)
++    val latestPageCommitted by rememberUpdatedState(onPageCommitted)
+     val latestPageBoundaryReached by rememberUpdatedState(onPageBoundaryReached)
+     val latestHasNextChapter by rememberUpdatedState(hasNextChapter)
+     val latestHasPreviousChapter by rememberUpdatedState(hasPreviousChapter)
+@@ -514,21 +518,25 @@ fun ReaderCanvasSurface(
+             dismissSelectionMenu()
+         }
+     }
+-    fun completePendingTurn(): ReaderPageWindow? {
+-        val direction = pendingTurn.takeIf { pendingTurnOrigin == currentPageWindow().current?.id }
+-        pendingTurn = null
+-        pendingTurnOrigin = null
++    fun commitPage(direction: ReaderTurnDirection): ReaderPageWindow? {
++        val origin = currentPageWindow()
+         val base = latestHostPages
+-        val window = when (direction) {
++        val result = when (direction) {
+             ReaderTurnDirection.PREVIOUS -> latestPreviousPage()
+             ReaderTurnDirection.NEXT -> latestNextPage()
+-            null -> null
+         }
+-        if (window != null) {
++        latestPageCommitted(direction, origin, result)
++        if (result != null) {
+             pendingPageBase = base
+-            pendingPageWindow = window
++            pendingPageWindow = result
+         }
+-        return window
++        return result
++    }
++    fun completePendingTurn(): ReaderPageWindow? {
++        val direction = pendingTurn.takeIf { pendingTurnOrigin == currentPageWindow().current?.id }
++        pendingTurn = null
++        pendingTurnOrigin = null
++        return direction?.let(::commitPage)
+     }
+     fun finishPageTurn() {
+         val originId = currentPageWindow().current?.id
+@@ -902,6 +910,7 @@ fun ReaderCanvasSurface(
+         autoReadSpeedSeconds,
+         transitionMode,
+         isEInkMode,
++        waterRipple,
+         scrollMotionActive,
+         current.id,
+         textSelection,
+@@ -915,13 +924,13 @@ fun ReaderCanvasSurface(
+         // 滚动动画期间挂起：对照旧 View 的 ReadView.onScrollAnimStart/Stop →
+         // autoPager.pause()/resume()，避免 fling / 点击步距与自动滚屏叠加。
+         if (scrollMotionActive) return@LaunchedEffect
+-        if (ReaderAutoPagePolicy.visualMode(isEInkMode) == ReaderAutoPageVisualMode.DISCRETE) {
++        if (ReaderAutoPagePolicy.visualMode(isEInkMode, waterRipple) == ReaderAutoPageVisualMode.DISCRETE) {
+             // 旧 `AutoPager` 的电子墨水分支：`pause()` 只 removeCallbacks，`resume()` 重新
+             // `postDelayed(this, autoReadSpeed * 1000L)` —— **整段重新计时**，不保留剩余时间。
+             autoRevealPx = 0f
+             delay(autoPageRemainingMillis)
+             autoPageRemainingMillis = ReaderAutoPagePolicy.pageDurationMillis(autoReadSpeedSeconds)
+-            if (!canTurn(ReaderTurnDirection.NEXT)) latestAutoPageStop() else latestNextPage()
++            if (!canTurn(ReaderTurnDirection.NEXT)) latestAutoPageStop() else commitPage(ReaderTurnDirection.NEXT)
+             return@LaunchedEffect
+         }
+         var previousFrame = withFrameNanos { it }
+@@ -959,7 +968,7 @@ fun ReaderCanvasSurface(
+                         latestAutoPageStop()
+                         break
+                     }
+-                    latestNextPage()
++                    commitPage(ReaderTurnDirection.NEXT)
+                     autoRevealPx = 0f
+                 }
+             }
+@@ -1407,7 +1416,7 @@ fun ReaderCanvasSurface(
+                                         size.height.toFloat(),
+                                     )
+                                 }
+-                            displayOffset = transition.offsetPx
++                            displayOffset = if (waterRipple) 0f else transition.offsetPx
+                             if (transitionMode == ReaderTransitionMode.IOS_CURL && transition.dragging) {
+                                 if (iosCurl.config == null) {
+                                     iosCurl.begin(requireNotNull(transition.direction), size.width, size.height,
+diff --git a/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicy.kt b/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicy.kt
+index c64415141e3b6161f009825ccbd9eeffb6f79089..0991f2b85ed4d57dac6fda076b192d8f6579550c 100644
+--- a/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicy.kt
++++ b/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicy.kt
+@@ -7,8 +7,8 @@ enum class ReaderAutoPageVisualMode {
+ 
+ /** Keeps e-ink auto paging free of continuous frame updates, matching the legacy reader. */
+ object ReaderAutoPagePolicy {
+-    fun visualMode(isEInkMode: Boolean): ReaderAutoPageVisualMode =
+-        if (isEInkMode) ReaderAutoPageVisualMode.DISCRETE else ReaderAutoPageVisualMode.PROGRESSIVE
++    fun visualMode(isEInkMode: Boolean, waterRipple: Boolean = false): ReaderAutoPageVisualMode =
++        if (isEInkMode || waterRipple) ReaderAutoPageVisualMode.DISCRETE else ReaderAutoPageVisualMode.PROGRESSIVE
+ 
+     fun pageDurationMillis(speedSeconds: Int): Long =
+         speedSeconds.coerceIn(1, 120) * 1_000L
+diff --git a/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderPageTransition.kt b/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderPageTransition.kt
+index 4b3c781b8acb1971e723506dd74a4cef9d162c11..eb6583b1d4129dac4d3da1a32f6c627715a94e8d 100644
+--- a/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderPageTransition.kt
++++ b/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderPageTransition.kt
+@@ -12,7 +12,8 @@ enum class ReaderTransitionMode {
+     FADE,
+     NONE,
+     GOOGLE_CURL,
+-    PARALLAX;
++    PARALLAX,
++    WATER_RIPPLE;
+ 
+     companion object {
+         fun fromPageAnim(value: Int): ReaderTransitionMode = when (value) {
+@@ -24,6 +25,7 @@ enum class ReaderTransitionMode {
+             6 -> IOS_CURL
+             7 -> GOOGLE_CURL
+             8 -> PARALLAX
++            9 -> WATER_RIPPLE
+             else -> NONE
+         }
+     }
+diff --git a/app/src/main/java/io/legado/app/help/config/ReadBookConfig.kt b/app/src/main/java/io/legado/app/help/config/ReadBookConfig.kt
+index d7e53ba18cc246a032b717bab5fd3605e9dcd55c..c84231a5b13f28ef10fd6d73c49cc8341576fd42 100644
+--- a/app/src/main/java/io/legado/app/help/config/ReadBookConfig.kt
++++ b/app/src/main/java/io/legado/app/help/config/ReadBookConfig.kt
+@@ -475,6 +475,10 @@ object ReadBookConfig {
+         if (!shareLayout) return exportConfig
+         // 共享排版开着时导出的是「当前样式的背景 + 共享那份的排版」，故只覆盖排版项。
+         return exportConfig.copy(
++            pageAnim = shareConfig.getPageAnim(),
++            pageAnimEInk = shareConfig.getPageAnimEInk(),
++            pageAnimSpeed = shareConfig.getPageAnimSpeed(),
++            waterRippleSpeed = shareConfig.getWaterRippleSpeed(),
+             textFont = shareConfig.textFont,
+             titleFont = shareConfig.titleFont,
+             headerFont = shareConfig.headerFont,
+@@ -575,6 +579,8 @@ object ReadBookConfig {
+         // 翻页动画速度挡位 0:极速(240ms) 1:快速(300ms) 2:适中(360ms,默认) 3:优雅(540ms)。
+         // 只改翻页动画的折算基准时长，不参与排版。
+         private val pageAnimSpeed: Int = 2,
++        // 掌阅硬件速度：0 快 / 1 标准 / 2 慢，与普通动画时长独立。
++        private val waterRippleSpeed: Int = 1,
+         val textFont: String = "",//字体
+         val titleFont: String = "",//标题字体
+         val headerFont: String = "",//页眉字体
+@@ -762,6 +768,7 @@ object ReadBookConfig {
+             "pageAnim" to pageAnim,
+             "pageAnimEInk" to pageAnimEInk,
+             "pageAnimSpeed" to pageAnimSpeed,
++            "waterRippleSpeed" to getWaterRippleSpeed(),
+             "textFont" to textFont,
+             "titleFont" to titleFont,
+             "headerFont" to headerFont,
+@@ -964,6 +971,11 @@ object ReadBookConfig {
+         fun getPageAnim(): Int = pageAnim
+         fun getPageAnimEInk(): Int = pageAnimEInk
+         fun getPageAnimSpeed(): Int = pageAnimSpeed
++        fun getWaterRippleSpeed(): Int = normalizeWaterRippleSpeed(waterRippleSpeed)
++        fun withWaterRippleSpeed(speed: Int): Config = copy(waterRippleSpeed = normalizeWaterRippleSpeed(speed))
++
++        private fun normalizeWaterRippleSpeed(speed: Int): Int =
++            if (speed in 0..2) speed else 1
+ 
+         fun withCurBg(bgType: Int, bg: String): Config =
+             ReadStyleResolver.withCurrentBackground(this, bgType, bg)
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookContract.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookContract.kt
+index a8dada4eb2a11078b750afa42f563e571fceb2e8..5b8c04aeb377cdf0367d303a8301cdeb1238c289 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookContract.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookContract.kt
+@@ -99,6 +99,10 @@ data class ReadBookStyleConfig(
+     val pageAnimEInk: Int = 4,
+     // 翻页速度挡位 0:极速 1:快速 2:适中(默认) 3:优雅，取值与时长见 ReaderPageTurnSpeed
+     val pageAnimSpeed: Int = 2,
++    val waterRippleSpeed: Int = 1,
++    val waterRippleSupported: Boolean = false,
++    val bookPageAnim: Int = -1,
++    val effectivePageAnim: Int = 0,
+     // Layout
+     val shareLayout: Boolean = false,
+     /** 阅读主题弹窗（背景网格）的列数，来自阅读设置 DataStore（2..6）。 */
+@@ -1689,6 +1693,10 @@ sealed interface ConfigUpdate {
+ 
+     // 翻页动画速度挡位只改翻页动画的折算基准时长，不改变动画种类、页高或排版，
+     // 因此没有任何渲染副作用：下一次翻页现读新挡位即可。
++    data class WaterRippleSpeed(val value: Int) : ConfigUpdate {
++        override val actions = emptySet<ConfigUpdateAction>()
++    }
++
+     data class PageAnimSpeed(val value: Int) : ConfigUpdate {
+         override val actions = emptySet<ConfigUpdateAction>()
+     }
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt
+index 4a9bf2fb3919d685f1fc021175217374e35ba3a0..3a1eb022ec5dce7ddcffd1cea545dd935d448005 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt
+@@ -75,6 +75,7 @@ import io.legado.app.feature.reader.ReaderBackgroundSurface
+ import io.legado.app.feature.reader.ReaderCanvasSurface
+ import io.legado.app.feature.reader.core.gesture.ReaderTapActionGrid
+ import io.legado.app.feature.reader.core.model.readerBackgroundAlpha
++import io.legado.app.feature.reader.core.transition.ReaderWaterRippleSpeed
+ import io.legado.app.feature.reader.core.transition.ReaderPageTurnSpeed
+ import io.legado.app.feature.reader.core.transition.ReaderTransitionMode
+ import io.legado.app.feature.reader.platform.ReaderPerfTrace
+@@ -197,6 +198,8 @@ fun ReadBookRouteScreen(
+         paddingDisplayCutouts = readPreferences.paddingDisplayCutouts,
+         inMultiWindow = controller.isInMultiWindowModeCompat,
+     )
++    val rippleView = LocalView.current
++    val waterRippleSession = viewModel.waterRippleSession
+     val context = LocalContext.current
+     val lifecycleOwner = LocalLifecycleOwner.current
+     val appUiConfiguration = LocalAppUiConfiguration.current
+@@ -684,7 +687,9 @@ fun ReadBookRouteScreen(
+             // 一律让出根层，否则每个翻页帧都要重画一次未压缩的全屏背景位图；画布不可见
+             // （首个可读页之前、退出之后）仍由根层兜底。
+             val readerCanvasVisible = hasReadablePage
+-            val readerTransitionMode = ReaderTransitionMode.fromPageAnim(controller.pageAnim)
++            val selectedTransitionMode = ReaderTransitionMode.fromPageAnim(controller.pageAnim)
++            val waterRipple = selectedTransitionMode == ReaderTransitionMode.WATER_RIPPLE
++            val readerTransitionMode = if (waterRipple) ReaderTransitionMode.NONE else selectedTransitionMode
+             if (!readerCanvasVisible) {
+                 // 归因用：成对 marker 夹住子树，其间隔即该子树的组合耗时（都在
+                 // `Compose:recompose` 之内）。子系统不用 tracing 时 marker 是空操作。
+@@ -707,6 +712,18 @@ fun ReadBookRouteScreen(
+                     hostPages = displayedReaderPageWindow ?: readerPageWindow,
+                     redrawRevision = readerRenderState.redrawRevision,
+                     transitionMode = readerTransitionMode,
++                    waterRipple = waterRipple,
++                    onPageCommitted = { direction, origin, destination ->
++                        if (waterRipple) {
++                            waterRippleSession.onPageChanged(
++                                direction = direction,
++                                rotation = rippleView.display?.rotation ?: 0,
++                                speed = ReaderWaterRippleSpeed.fromValue(state.styleConfig.waterRippleSpeed),
++                                origin = origin.current,
++                                destination = destination?.current,
++                            )
++                        }
++                    },
+                     pageTurnSpeed = ReaderPageTurnSpeed.fromValue(state.styleConfig.pageAnimSpeed),
+                 backgroundColor = readerSurfaceColor,
+                 backgroundImage = readerBackground.drawable,
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookScreen.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookScreen.kt
+index 889793b4b0148dfa91bd1b45906d00cd5c3aaeb7..eabfe46fc869dc717229a2a9880ef7ce2b8a44b1 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookScreen.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookScreen.kt
+@@ -859,6 +859,8 @@ private fun ReadBookSheetContent(
+ 
+                 is ReadBookSheet.PageAnim -> {
+                     PageAnimConfigSheet(
++                        styleConfig = state.styleConfig,
++                        onIntent = onIntent,
+                         onDismissRequest = dismissSheet,
+                         onAnimChanged = { onIntent(ReadBookIntent.PageAnimChanged) },
+                     )
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
+index 725eaea70749625c533e18466bb6efa3027e1adb..b7fb1e3db5ad96e8eca61844bd8ebee03eb0ae98 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
+@@ -52,6 +52,7 @@ import io.legado.app.domain.usecase.SyncReadAloudVoicesUseCase
+ import io.legado.app.domain.usecase.UploadReadingProgressUseCase
+ import io.legado.app.domain.usecase.VerifyBookmarkTargetUseCase
+ import io.legado.app.exception.NoStackTraceException
++import io.legado.app.feature.reader.platform.SmartOsPageTurnEffect
+ import io.legado.app.feature.reader.core.navigation.ReaderChapterPagePosition
+ import io.legado.app.feature.reader.core.navigation.ReaderPageContext
+ import io.legado.app.help.book.BookHelp
+@@ -156,6 +157,11 @@ class ReadBookViewModel(
+     private val readRecordRepository: ReadRecordRepository,
+     private val readerSession: ReaderSession,
+ ) : BaseViewModel(application) {
++    // Keep command failure suppression across configuration recreation for this reading session.
++    internal val waterRippleSession by lazy {
++        SmartOsPageTurnEffect.newSession()
++    }
++
+     // --- MVI State ---
+ 
+     private val _uiState = MutableStateFlow(ReadBookUiState())
+@@ -1614,6 +1620,7 @@ class ReadBookViewModel(
+             }
+ 
+             is ReadBookIntent.PageAnimChanged -> {
++                _uiState.update { it.copy(styleConfig = buildStyleConfig()) }
+                 _effects.tryEmit(ReadBookEffect.PageAnimChanged)
+             }
+ 
+@@ -1967,9 +1974,13 @@ class ReadBookViewModel(
+             textColorEInk = dur.getTextColorEInk(),
+             textFont = config.textFont,
+             titleFont = config.titleFont,
+-            pageAnim = actualConfig.getPageAnim(),
++            pageAnim = actualConfig.curPageAnim(),
+             pageAnimEInk = actualConfig.getPageAnimEInk(),
+             pageAnimSpeed = actualConfig.getPageAnimSpeed(),
++            waterRippleSpeed = actualConfig.getWaterRippleSpeed(),
++            waterRippleSupported = SmartOsPageTurnEffect.isSupported,
++            bookPageAnim = ReadBook.book?.config?.pageAnim?.takeIf { it >= 0 } ?: -1,
++            effectivePageAnim = ReadBook.pageAnim(),
+             shareLayout = config.shareLayout,
+             gridColumns = readSettingsRepository.currentSettings.themeGridColumns,
+             menuBgColorDay = dur.menuBgColor(isNight = false),
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt
+index 9b6726812df3949a94b9f040158202a8b418261f..76b3245301be82419aa21c0be0fcdc02a5258076 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt
+@@ -130,6 +130,7 @@ class ReadConfigUpdateDelegate(
+             }
+             is ConfigUpdate.PageAnim -> Unit
+             is ConfigUpdate.PageAnimSpeed -> Unit
++            is ConfigUpdate.WaterRippleSpeed -> Unit
+ 
+             // --- Menu appearance ---
+             is ConfigUpdate.MenuBgColor -> {
+@@ -833,6 +834,7 @@ class ReadConfigUpdateDelegate(
+         is ConfigUpdate.TipDividerColor -> colorMutation(ReadStyleColorKey.TipDivider, color)
+         is ConfigUpdate.PageAnim -> intMutation(ReadStyleIntKey.PageAnim, value)
+         is ConfigUpdate.PageAnimSpeed -> intMutation(ReadStyleIntKey.PageAnimSpeed, value)
++        is ConfigUpdate.WaterRippleSpeed -> intMutation(ReadStyleIntKey.WaterRippleSpeed, value)
+         is ConfigUpdate.TextShadow -> booleanMutation(ReadStyleBooleanKey.TextShadow, value)
+         is ConfigUpdate.ShadowRadius -> floatMutation(ReadStyleFloatKey.ShadowRadius, value)
+         is ConfigUpdate.ShadowDx -> floatMutation(ReadStyleFloatKey.ShadowDx, value)
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt b/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
+index f573fc817591c8fa52a4127de786fe424f35e783..1604b60e6dd4c39f0c28d79065eac3964aaf407d 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
+@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.core.graphics.toColorInt
+ import coil3.compose.AsyncImage
+ import io.legado.app.R
++import io.legado.app.feature.reader.model.readerPageAnimationOptions
+ import io.legado.app.constant.PageAnim
+ import io.legado.app.data.repository.ReadPreferences
+ import io.legado.app.domain.model.settings.ReadStyleItem
+@@ -350,22 +351,16 @@ fun GlobalThemePage(
+ 
+         // 每一项带自己的 PageAnim 取值：菜单里加一项或换个顺序都不会再让「下标 == 常量值」这个
+         // 隐含约定错位（菜单里加一项或换个顺序都不会再让「下标 == 常量值」这个隐含约定错位）。
+-        val pageAnimOptions = listOf(
+-            R.string.page_anim_cover to PageAnim.coverPageAnim,
+-            R.string.page_anim_slide to PageAnim.slidePageAnim,
+-            R.string.page_anim_simulation to PageAnim.simulationPageAnim,
+-            R.string.page_anim_ios_curl to PageAnim.iosCurlPageAnim,
+-            R.string.page_anim_google_curl to PageAnim.googleCurlPageAnim,
+-            R.string.page_anim_parallax to PageAnim.parallaxPageAnim,
+-            R.string.page_anim_scroll to PageAnim.scrollPageAnim,
+-            R.string.page_anim_fade to PageAnim.fadePageAnim,
+-            R.string.page_anim_none to PageAnim.noAnim,
+-        )
++        val pageAnimOptions = readerPageAnimationOptions(styleConfig.waterRippleSupported, includeDefault = false)
+         var showPageAnimMenu by remember { mutableStateOf(false) }
+-        val pageAnimEntries = pageAnimOptions.map { stringResource(it.first) to it.second }
+-        val currentPageAnimDisplay = pageAnimEntries.firstOrNull { it.second == pageAnim }?.first ?: ""
++        val pageAnimEntries = pageAnimOptions.map { stringResource(it.label) to it.value }
++        val currentPageAnimDisplay = pageAnimEntries.firstOrNull { it.second == pageAnim }?.first ?: stringResource(R.string.page_anim_none)
+ 
+-        val pageAnimSpeedOptions = listOf(
++        val useWaterRipple = styleConfig.waterRippleSupported &&
++            pageAnim == PageAnim.waterRipplePageAnim
++        val pageAnimSpeedOptions = if (useWaterRipple) listOf(
++            R.string.water_ripple_fast, R.string.water_ripple_standard, R.string.water_ripple_slow,
++        ) else listOf(
+             R.string.page_anim_speed_fastest,
+             R.string.page_anim_speed_fast,
+             R.string.page_anim_speed_moderate,
+@@ -410,7 +405,7 @@ fun GlobalThemePage(
+                     }
+                 }
+             }
+-            // 翻页动画速度挡位：与右侧 SpaceBar 卡片同款方卡，点开选极速 / 快速 / 适中 / 优雅。
++            // 水波纹使用独立硬件速度，普通动画保留原来的四档时长。
+             Box {
+                 NormalCard(
+                     onClick = { showPageAnimSpeedMenu = true },
+@@ -423,7 +418,9 @@ fun GlobalThemePage(
+                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                         AppIcon(
+                             imageVector = Icons.Default.Speed,
+-                            contentDescription = stringResource(R.string.page_anim_speed),
++                            contentDescription = stringResource(
++                                if (useWaterRipple) R.string.water_ripple_speed else R.string.page_anim_speed
++                            ),
+                             tint = LegadoTheme.colorScheme.onSurfaceVariant,
+                         )
+                     }
+@@ -437,11 +434,14 @@ fun GlobalThemePage(
+                             text = display,
+                             onClick = {
+                                 onIntent(
+-                                    ReadBookIntent.UpdateConfig(ConfigUpdate.PageAnimSpeed(index))
++                                    ReadBookIntent.UpdateConfig(
++                                        if (useWaterRipple) ConfigUpdate.WaterRippleSpeed(index)
++                                        else ConfigUpdate.PageAnimSpeed(index)
++                                    )
+                                 )
+                                 dismiss()
+                             },
+-                            isSelected = index == pageAnimSpeed,
++                            isSelected = index == if (useWaterRipple) styleConfig.waterRippleSpeed else pageAnimSpeed,
+                         )
+                     }
+                 }
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/sheet/PageAnimConfigSheet.kt b/app/src/main/java/io/legado/app/ui/book/read/sheet/PageAnimConfigSheet.kt
+index a9496a0a551993c42b6013ab37dc0aaf3cab5600..d5fa9446454b8cef2f057906d22f86ee7f9ceeb8 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/sheet/PageAnimConfigSheet.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/sheet/PageAnimConfigSheet.kt
+@@ -1,9 +1,15 @@
+ package io.legado.app.ui.book.read.sheet
+ 
++import androidx.compose.foundation.layout.Column
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.res.stringResource
+ import io.legado.app.R
++import io.legado.app.feature.reader.model.readerPageAnimationOptions
+ import io.legado.app.constant.PageAnim
++import io.legado.app.feature.reader.components.WaterRippleSpeedSetting
++import io.legado.app.ui.book.read.ReadBookStyleConfig
++import io.legado.app.ui.book.read.ReadBookIntent
++import io.legado.app.ui.book.read.ConfigUpdate
+ import io.legado.app.model.ReadBook
+ import io.legado.app.ui.widget.components.alert.AppAlertDialog
+ import io.legado.app.ui.widget.components.settingItem.TinyDropdownSettingItem
+@@ -12,40 +18,40 @@ import io.legado.app.ui.widget.components.settingItem.TinyDropdownSettingItem
+ fun PageAnimConfigSheet(
+     onDismissRequest: () -> Unit,
+     onAnimChanged: () -> Unit,
++    styleConfig: ReadBookStyleConfig,
++    onIntent: (ReadBookIntent) -> Unit,
+ ) {
+     // 每项自带 PageAnim 取值，不按「下标 - 1」推导：列表少一项就会整体错位一格
+     // （最后一项写着「无动画」，落库的却是别的值）。
+-    val items = listOf(
+-        R.string.btn_default_s to -1,
+-        R.string.page_anim_cover to PageAnim.coverPageAnim,
+-        R.string.page_anim_slide to PageAnim.slidePageAnim,
+-        R.string.page_anim_simulation to PageAnim.simulationPageAnim,
+-        R.string.page_anim_ios_curl to PageAnim.iosCurlPageAnim,
+-        R.string.page_anim_google_curl to PageAnim.googleCurlPageAnim,
+-        R.string.page_anim_parallax to PageAnim.parallaxPageAnim,
+-        R.string.page_anim_scroll to PageAnim.scrollPageAnim,
+-        R.string.page_anim_fade to PageAnim.fadePageAnim,
+-        R.string.page_anim_none to PageAnim.noAnim,
+-    )
++    val items = readerPageAnimationOptions(styleConfig.waterRippleSupported, includeDefault = true)
+ 
+     // 调用方按 when(sheet) 条件组合本弹窗，所以这里 show 恒为 true；没有确定/取消按钮，
+-    // 选一项即落库并关闭（与原来的裸 AlertDialog 行为一致）。
++    // 普通动画选中后关闭；水波纹保留弹窗以便继续选择独立速度。
+     AppAlertDialog(
+         show = true,
+         onDismissRequest = onDismissRequest,
+         title = stringResource(R.string.page_anim),
+         content = {
+-            TinyDropdownSettingItem(
+-                title = stringResource(R.string.page_anim),
+-                selectedValue = ReadBook.book?.getPageAnim()?.toString() ?: "-1",
+-                displayEntries = items.map { stringResource(it.first) }.toTypedArray(),
+-                entryValues = items.map { it.second.toString() }.toTypedArray(),
+-                onValueChange = {
+-                    ReadBook.book?.setPageAnim(it.toInt())
+-                    onAnimChanged()
+-                    onDismissRequest()
+-                },
+-            )
++            Column {
++                TinyDropdownSettingItem(
++                    title = stringResource(R.string.page_anim),
++                    selectedValue = if (!styleConfig.waterRippleSupported &&
++                        styleConfig.bookPageAnim == PageAnim.waterRipplePageAnim
++                    ) PageAnim.noAnim.toString() else styleConfig.bookPageAnim.toString(),
++                    displayEntries = items.map { stringResource(it.label) }.toTypedArray(),
++                    entryValues = items.map { it.value.toString() }.toTypedArray(),
++                    onValueChange = {
++                        ReadBook.book?.setPageAnim(it.toInt())
++                        onAnimChanged()
++                        if (it.toInt() != PageAnim.waterRipplePageAnim) onDismissRequest()
++                    },
++                )
++                if (styleConfig.waterRippleSupported && styleConfig.effectivePageAnim == PageAnim.waterRipplePageAnim) {
++                    WaterRippleSpeedSetting(styleConfig.waterRippleSpeed) {
++                        onIntent(ReadBookIntent.UpdateConfig(ConfigUpdate.WaterRippleSpeed(it)))
++                    }
++                }
++            }
+         },
+     )
+ }
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt b/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt
+index 12bb8c5d0ab49f70538521688747983a90eec6b2..dfef9c305da1f1f52b5f799d745d2c0deea30090 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt
+@@ -48,11 +48,13 @@ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.res.stringResource
+ import androidx.compose.ui.unit.dp
+ import io.legado.app.R
++import io.legado.app.feature.reader.model.readerPageAnimationOptions
+ import io.legado.app.constant.PageAnim
+ import io.legado.app.data.entities.Book
+ import io.legado.app.model.ReadBook
+ import io.legado.app.ui.book.read.MoreActionIds
+ import io.legado.app.ui.book.read.ReadBookButtonConfigItem
++import io.legado.app.ui.book.read.ConfigUpdate
+ import io.legado.app.ui.book.read.ReadBookIntent
+ import io.legado.app.ui.book.read.ReadBookMenuRoute
+ import io.legado.app.ui.book.read.ReadBookSheet
+@@ -265,7 +267,10 @@ private fun ActionSquareHost(
+ 
+             "page_anim" -> PageAnimDropdown(
+                 expanded = expanded,
+-                currentPageAnim = state.book?.getPageAnim() ?: -1,
++                currentPageAnim = state.styleConfig.bookPageAnim,
++                waterRippleSupported = state.styleConfig.waterRippleSupported,
++                effectivePageAnim = state.styleConfig.effectivePageAnim,
++                waterRippleSpeed = state.styleConfig.waterRippleSpeed,
+                 onDismissRequest = { expanded = false },
+                 onIntent = onIntent,
+             )
+@@ -449,26 +454,21 @@ private fun ImageStyleDropdown(
+ private fun PageAnimDropdown(
+     expanded: Boolean,
+     currentPageAnim: Int,
++    waterRippleSupported: Boolean,
++    effectivePageAnim: Int,
++    waterRippleSpeed: Int,
+     onDismissRequest: () -> Unit,
+     onIntent: (ReadBookIntent) -> Unit,
+ ) {
+-    val pageAnimOptions = listOf(
+-        R.string.btn_default_s to -1,
+-        R.string.page_anim_cover to PageAnim.coverPageAnim,
+-        R.string.page_anim_slide to PageAnim.slidePageAnim,
+-        R.string.page_anim_simulation to PageAnim.simulationPageAnim,
+-        R.string.page_anim_ios_curl to PageAnim.iosCurlPageAnim,
+-        R.string.page_anim_google_curl to PageAnim.googleCurlPageAnim,
+-        R.string.page_anim_parallax to PageAnim.parallaxPageAnim,
+-        R.string.page_anim_scroll to PageAnim.scrollPageAnim,
+-        R.string.page_anim_fade to PageAnim.fadePageAnim,
+-        R.string.page_anim_none to PageAnim.noAnim,
+-    )
++    val pageAnimOptions = readerPageAnimationOptions(waterRippleSupported, includeDefault = true)
++    val visiblePageAnim = if (!waterRippleSupported && currentPageAnim == PageAnim.waterRipplePageAnim) {
++        PageAnim.noAnim
++    } else currentPageAnim
+     RoundDropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest) { dismiss ->
+         pageAnimOptions.forEach { (label, value) ->
+             RoundDropdownMenuItem(
+                 text = stringResource(label),
+-                isSelected = currentPageAnim == value,
++                isSelected = visiblePageAnim == value,
+                 onClick = {
+                     ReadBook.book?.setPageAnim(value)
+                     dismiss()
+@@ -476,5 +476,18 @@ private fun PageAnimDropdown(
+                 },
+             )
+         }
++        if (waterRippleSupported && effectivePageAnim == PageAnim.waterRipplePageAnim) {
++            listOf(R.string.water_ripple_fast, R.string.water_ripple_standard, R.string.water_ripple_slow)
++                .forEachIndexed { speed, label ->
++                    RoundDropdownMenuItem(
++                        text = stringResource(R.string.water_ripple_speed) + ": " + stringResource(label),
++                        isSelected = speed == waterRippleSpeed,
++                        onClick = {
++                            onIntent(ReadBookIntent.UpdateConfig(ConfigUpdate.WaterRippleSpeed(speed)))
++                            dismiss()
++                        },
++                    )
++                }
++        }
+     }
+ }
+diff --git a/app/src/main/res/values-zh-rCN/strings.xml b/app/src/main/res/values-zh-rCN/strings.xml
+index 7cac299dc967d0705d13c74becf4be29a47a4d56..a78b6142e46d52dd113e91c2c361da31e470ec43 100644
+--- a/app/src/main/res/values-zh-rCN/strings.xml
++++ b/app/src/main/res/values-zh-rCN/strings.xml
+@@ -3989,4 +3989,9 @@
+     <string name="a11y_open_playback">打开播放界面</string>
+     <string name="a11y_open_playback_named">打开《%1$s》的播放界面</string>
+     <string name="a11y_reorder_position">第 %1$d 项，共 %2$d 项</string>
++    <string name="page_anim_water_ripple">掌阅水波纹</string>
++    <string name="water_ripple_speed">水波纹速度</string>
++    <string name="water_ripple_fast">快</string>
++    <string name="water_ripple_standard">标准</string>
++    <string name="water_ripple_slow">慢</string>
+ </resources>
+diff --git a/app/src/main/res/values-zh-rHK/strings.xml b/app/src/main/res/values-zh-rHK/strings.xml
+index dd4365e84633755087335ddb15c7116cb4a43a3c..d242ad8d3d79d05fa425632b300a161f67ab3ebc 100644
+--- a/app/src/main/res/values-zh-rHK/strings.xml
++++ b/app/src/main/res/values-zh-rHK/strings.xml
+@@ -3099,4 +3099,9 @@
+     <string name="a11y_open_playback">開啟播放介面</string>
+     <string name="a11y_open_playback_named">開啟《%1$s》的播放介面</string>
+     <string name="a11y_reorder_position">第 %1$d 項，共 %2$d 項</string>
++    <string name="page_anim_water_ripple">掌閱水波紋</string>
++    <string name="water_ripple_speed">水波紋速度</string>
++    <string name="water_ripple_fast">快</string>
++    <string name="water_ripple_standard">標準</string>
++    <string name="water_ripple_slow">慢</string>
+ </resources>
+diff --git a/app/src/main/res/values-zh-rTW/strings.xml b/app/src/main/res/values-zh-rTW/strings.xml
+index 7d501882e24d076ed021abdf8080c45f085f09ce..7e9af87cbaa0927d1f3d6a5c4635bfb88a05d28f 100644
+--- a/app/src/main/res/values-zh-rTW/strings.xml
++++ b/app/src/main/res/values-zh-rTW/strings.xml
+@@ -3104,4 +3104,9 @@
+     <string name="a11y_open_playback">開啟播放介面</string>
+     <string name="a11y_open_playback_named">開啟《%1$s》的播放介面</string>
+     <string name="a11y_reorder_position">第 %1$d 項，共 %2$d 項</string>
++    <string name="page_anim_water_ripple">掌閱水波紋</string>
++    <string name="water_ripple_speed">水波紋速度</string>
++    <string name="water_ripple_fast">快</string>
++    <string name="water_ripple_standard">標準</string>
++    <string name="water_ripple_slow">慢</string>
+ </resources>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index a3b15deacae59ce3c78a9b3ea64b87c2e55bc430..6d8356c3d9fe223d5ce770de5b94b9c14cb4e25b 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -3992,4 +3992,9 @@
+     <string name="a11y_open_playback">Open player</string>
+     <string name="a11y_open_playback_named">Open player for %1$s</string>
+     <string name="a11y_reorder_position">Position %1$d of %2$d</string>
++    <string name="page_anim_water_ripple">Water ripple (iReader)</string>
++    <string name="water_ripple_speed">Water ripple speed</string>
++    <string name="water_ripple_fast">Fast</string>
++    <string name="water_ripple_standard">Standard</string>
++    <string name="water_ripple_slow">Slow</string>
+ </resources>
+diff --git a/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt b/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt
+index 2eec81c8f525d7e1f8831a0e28dc153f1e1501ce..4600355f77b3e61feafcccae792050b86133f7b7 100644
+--- a/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt
++++ b/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt
+@@ -2,6 +2,9 @@ package io.legado.app.data.repository
+ 
+ import android.app.Application
+ import io.legado.app.data.entities.HighlightRule
++import io.legado.app.domain.gateway.ReadStyleIntKey
++import io.legado.app.domain.gateway.ReadStyleMutation
++import kotlinx.coroutines.runBlocking
+ import io.legado.app.domain.gateway.ReadSettingsGateway
+ import io.legado.app.domain.gateway.AppShellSettingsGateway
+ import io.legado.app.domain.gateway.ThemeSettingsGateway
+@@ -38,6 +41,7 @@ class ReadStyleThemeTransferTest {
+     private lateinit var rules: HighlightRuleRepository
+     private lateinit var store: ReadStyleConfigStore
+     private lateinit var gateway: ReadBookStyleConfigRepository
++    private lateinit var settings: ReadSettingsGateway
+ 
+     @Before
+     fun setUp() {
+@@ -59,7 +63,7 @@ class ReadStyleThemeTransferTest {
+         ))
+         File(repository.shareConfigFilePath).writeText(GSON.toJson(ReadBookConfig.Config()))
+         store = ReadStyleConfigStore(repository)
+-        val settings = object : ReadSettingsGateway {
++        settings = object : ReadSettingsGateway {
+             override val settings = MutableStateFlow(ReadSettings(readStyleSelect = 5))
+             override val currentSettings get() = settings.value
+             override suspend fun update(transform: (ReadSettings) -> ReadSettings) {
+@@ -76,6 +80,28 @@ class ReadStyleThemeTransferTest {
+         stopKoin()
+     }
+ 
++    @Test
++    fun currentStyleExportIncludesSharedWaterRippleAndIndependentSpeed() = runBlocking {
++        settings.update { it.copy(shareLayout = true) }
++        store.updateEffective(5, useShare = true) {
++            it.copy(pageAnim = 9, pageAnimEInk = 9).withPageAnimSpeed(3)
++        }
++        gateway.updateCurrentStyle(ReadStyleMutation.IntValue(ReadStyleIntKey.WaterRippleSpeed, 0))
++        val exported = gateway.exportCurrentStyle()
++        val config = GSON.fromJsonObject<ReadBookConfig.Config>(
++            unzip(exported).getValue(ReadBookConfig.configFileName).decodeToString()
++        ).getOrThrow()
++        assertEquals(9, config.getPageAnim())
++        assertEquals(9, config.getPageAnimEInk())
++        assertEquals(3, config.getPageAnimSpeed())
++        assertEquals(0, config.getWaterRippleSpeed())
++        assertEquals(1, store.configAt(5).getWaterRippleSpeed())
++        val imported = store.configAt(requireNotNull(gateway.importStylesAsNew(exported)))
++        assertEquals(9, imported.getPageAnim())
++        assertEquals(0, imported.getWaterRippleSpeed())
++        assertEquals(3, imported.getPageAnimSpeed())
++    }
++
+     @Test
+     fun importingSameNameAsNewKeepsTheExistingThemesRules() {
+         val old = rule("old", "A", "old pattern")
+diff --git a/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicyTest.kt b/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicyTest.kt
+index 6993a43b993654137f0cfd35840e2e4879ea0b8b..9c3dbd9c47ff266f367b25d61f86327a1d8d81c7 100644
+--- a/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicyTest.kt
++++ b/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderAutoPagePolicyTest.kt
+@@ -10,6 +10,12 @@ class ReaderAutoPagePolicyTest {
+         assertEquals(ReaderAutoPageVisualMode.PROGRESSIVE, ReaderAutoPagePolicy.visualMode(false))
+     }
+ 
++    @Test
++    fun `water ripple uses discrete changes without requiring e ink theme`() {
++        assertEquals(ReaderAutoPageVisualMode.DISCRETE, ReaderAutoPagePolicy.visualMode(false, true))
++        assertEquals(ReaderAutoPageVisualMode.DISCRETE, ReaderAutoPagePolicy.visualMode(true, true))
++    }
++
+     @Test
+     fun `page duration follows the supported legacy speed range`() {
+         assertEquals(1_000L, ReaderAutoPagePolicy.pageDurationMillis(0))
+diff --git a/app/src/test/java/io/legado/app/help/config/ReadConfigJsonRoundTripTest.kt b/app/src/test/java/io/legado/app/help/config/ReadConfigJsonRoundTripTest.kt
+index d81e871acc967a4953a0ecf6911769a6948af5df..214c7c33fd26f5906636657d2103cf214feccb7a 100644
+--- a/app/src/test/java/io/legado/app/help/config/ReadConfigJsonRoundTripTest.kt
++++ b/app/src/test/java/io/legado/app/help/config/ReadConfigJsonRoundTripTest.kt
+@@ -24,6 +24,25 @@ class ReadConfigJsonRoundTripTest {
+ 
+     private val gson = Gson()
+ 
++    @Test
++    fun `水波纹配置往返并保留普通动画速度`() {
++        val original = ReadBookConfig.Config(pageAnim = 9, pageAnimEInk = 9)
++            .withPageAnimSpeed(3).withWaterRippleSpeed(0)
++        val restored = gson.fromJson(gson.toJson(original), ReadBookConfig.Config::class.java)
++        assertEquals(9, restored.getPageAnim())
++        assertEquals(9, restored.getPageAnimEInk())
++        assertEquals(0, restored.getWaterRippleSpeed())
++        assertEquals(3, restored.getPageAnimSpeed())
++        assertEquals(0, restored.toMap()["waterRippleSpeed"])
++        assertEquals(3, restored.withWaterRippleSpeed(2).getPageAnimSpeed())
++        assertEquals(0, restored.withPageAnimSpeed(1).getWaterRippleSpeed())
++        val legacy = gson.fromJson("{}", ReadBookConfig.Config::class.java)
++        val invalid = gson.fromJson("{\"waterRippleSpeed\":99}", ReadBookConfig.Config::class.java)
++        assertEquals(1, legacy.getWaterRippleSpeed())
++        assertEquals(1, invalid.getWaterRippleSpeed())
++        assertEquals(1, original.withWaterRippleSpeed(-1).getWaterRippleSpeed())
++    }
++
+     @Test
+     fun `非默认值能完整往返`() {
+         val original = ReadBookConfig.Config(
+diff --git a/app/src/test/java/io/legado/app/ui/book/read/ConfigUpdateActionsInvariantTest.kt b/app/src/test/java/io/legado/app/ui/book/read/ConfigUpdateActionsInvariantTest.kt
+index b17f623789734fad0776ee196d9cff33844ba022..dac261c18498a84be4bce13e11ceb7945614d259 100644
+--- a/app/src/test/java/io/legado/app/ui/book/read/ConfigUpdateActionsInvariantTest.kt
++++ b/app/src/test/java/io/legado/app/ui/book/read/ConfigUpdateActionsInvariantTest.kt
+@@ -166,6 +166,8 @@ class ConfigUpdateActionsInvariantTest {
+             // 页高或排版，因此没有需要命令式驱动的渲染副作用。它写的是排版配置而非 DataStore，
+             // 快照经 `ReadStyleGateway.publishState` 反应式刷新，故同样落在这里。
+             "PageAnimSpeed",
++            // Hardware speed is read at the next committed turn; no re-layout or redraw.
++            "WaterRippleSpeed",
+         )
+     }
+ }
+diff --git a/app/src/main/java/io/legado/app/feature/reader/components/WaterRippleSpeedSetting.kt b/app/src/main/java/io/legado/app/feature/reader/components/WaterRippleSpeedSetting.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/io/legado/app/feature/reader/components/WaterRippleSpeedSetting.kt
+@@ -0,0 +1,21 @@
++package io.legado.app.feature.reader.components
++
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.res.stringResource
++import io.legado.app.R
++import io.legado.app.ui.widget.components.settingItem.TinyDropdownSettingItem
++
++@Composable
++fun WaterRippleSpeedSetting(speed: Int, onSpeedChange: (Int) -> Unit) {
++    TinyDropdownSettingItem(
++        title = stringResource(R.string.water_ripple_speed),
++        selectedValue = speed.toString(),
++        displayEntries = arrayOf(
++            stringResource(R.string.water_ripple_fast),
++            stringResource(R.string.water_ripple_standard),
++            stringResource(R.string.water_ripple_slow),
++        ),
++        entryValues = arrayOf("0", "1", "2"),
++        onValueChange = { onSpeedChange(it.toInt()) },
++    )
++}
+diff --git a/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicy.kt b/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicy.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicy.kt
+@@ -0,0 +1,57 @@
++package io.legado.app.feature.reader.core.transition
++
++import io.legado.app.feature.reader.core.model.ReaderPage
++
++/** Stable persisted values, independent of the ordinary animation duration. */
++enum class ReaderWaterRippleSpeed(val value: Int, val commandFlag: Int) {
++    FAST(0, 0), STANDARD(1, 64), SLOW(2, 128);
++
++    companion object {
++        fun fromValue(value: Int): ReaderWaterRippleSpeed = entries.firstOrNull { it.value == value } ?: STANDARD
++    }
++}
++
++object ReaderWaterRipplePolicy {
++    fun isSupported(manufacturer: String, brand: String, version: String?, hasCommand: Boolean): Boolean =
++        (manufacturer.equals("iReader", true) || brand.equals("iReader", true)) &&
++            (version?.substringBefore('.')?.toIntOrNull() ?: 0) >= 4 && hasCommand
++
++    /** Rotation uses Android display rotation values 0..3, without Android dependencies. */
++    fun commandCode(direction: ReaderTurnDirection, rotation: Int, speed: ReaderWaterRippleSpeed): Int {
++        val forward = direction == ReaderTurnDirection.NEXT
++        val code = when (rotation) {
++            1 -> if (forward) 4 else 3
++            2 -> if (forward) 2 else 1
++            3 -> if (forward) 3 else 4
++            else -> if (forward) 1 else 2
++        }
++        return code or speed.commandFlag
++    }
++}
++
++/** One session owns failure suppression; callers invoke only for an actual, readable page change. */
++class ReaderWaterRippleSession(
++    private val supported: Boolean,
++    private val sendCommand: (String) -> Unit,
++    private val onFailure: (Throwable) -> Unit,
++) {
++    private var failed = false
++
++    fun onPageChanged(
++        direction: ReaderTurnDirection,
++        rotation: Int,
++        speed: ReaderWaterRippleSpeed,
++        origin: ReaderPage?,
++        destination: ReaderPage?,
++    ) {
++        if (!supported || failed || origin == null || destination == null ||
++            origin.id == destination.id || origin.isPlaceholder || destination.isPlaceholder
++        ) return
++        try {
++            sendCommand("next-effect-type ${ReaderWaterRipplePolicy.commandCode(direction, rotation, speed)}")
++        } catch (error: Exception) {
++            failed = true
++            onFailure(error)
++        }
++    }
++}
+diff --git a/app/src/main/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptions.kt b/app/src/main/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptions.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptions.kt
+@@ -0,0 +1,29 @@
++package io.legado.app.feature.reader.model
++
++import androidx.annotation.StringRes
++import androidx.compose.runtime.Stable
++import io.legado.app.R
++import io.legado.app.constant.PageAnim
++import kotlinx.collections.immutable.ImmutableList
++import kotlinx.collections.immutable.toImmutableList
++
++@Stable
++data class ReaderPageAnimationOption(@param:StringRes val label: Int, val value: Int)
++
++fun readerPageAnimationOptions(
++    supported: Boolean,
++    includeDefault: Boolean = false,
++): ImmutableList<ReaderPageAnimationOption> =
++    buildList {
++        if (includeDefault) add(ReaderPageAnimationOption(R.string.btn_default_s, -1))
++        add(ReaderPageAnimationOption(R.string.page_anim_cover, PageAnim.coverPageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_slide, PageAnim.slidePageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_simulation, PageAnim.simulationPageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_ios_curl, PageAnim.iosCurlPageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_google_curl, PageAnim.googleCurlPageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_parallax, PageAnim.parallaxPageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_scroll, PageAnim.scrollPageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_fade, PageAnim.fadePageAnim))
++        if (supported) add(ReaderPageAnimationOption(R.string.page_anim_water_ripple, PageAnim.waterRipplePageAnim))
++        add(ReaderPageAnimationOption(R.string.page_anim_none, PageAnim.noAnim))
++    }.toImmutableList()
+diff --git a/app/src/main/java/io/legado/app/feature/reader/platform/SmartOsPageTurnEffect.kt b/app/src/main/java/io/legado/app/feature/reader/platform/SmartOsPageTurnEffect.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/io/legado/app/feature/reader/platform/SmartOsPageTurnEffect.kt
+@@ -0,0 +1,44 @@
++package io.legado.app.feature.reader.platform
++
++import android.os.Build
++import io.legado.app.feature.reader.core.transition.ReaderWaterRipplePolicy
++import io.legado.app.feature.reader.core.transition.ReaderWaterRippleSession
++import timber.log.Timber
++
++/** Vendor reflection stays in the Android adapter, never in rendering or settings UI. */
++object SmartOsPageTurnEffect {
++    private val command by lazy {
++        runCatching {
++            Class.forName("android.eink.EPDCDevice").getMethod("nativePostCommand", String::class.java)
++        }.getOrNull()
++    }
++
++    val isSupported: Boolean by lazy {
++        val isIReader = Build.MANUFACTURER.orEmpty().equals("iReader", true) || Build.BRAND.orEmpty().equals("iReader", true)
++        isIReader && ReaderWaterRipplePolicy.isSupported(
++            Build.MANUFACTURER.orEmpty(), Build.BRAND.orEmpty(), readVersion(), command != null,
++        )
++    }
++
++    private fun readVersion(): String? {
++        val reflected = runCatching {
++            Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
++                .invoke(null, "ro.build.versionCode") as? String
++        }.getOrNull()
++        if (!reflected.isNullOrBlank()) return reflected
++        return runCatching {
++            val process = ProcessBuilder("/system/bin/getprop", "ro.build.versionCode").start()
++            try {
++                process.inputStream.bufferedReader().use { it.readLine() }
++            } finally {
++                process.destroy()
++            }
++        }.getOrNull()
++    }
++
++    fun newSession(): ReaderWaterRippleSession = ReaderWaterRippleSession(
++        supported = isSupported,
++        sendCommand = { value -> checkNotNull(command).invoke(null, value); Unit },
++        onFailure = { Timber.tag("SmartOsPageTurn").w(it, "Water ripple disabled for this reader session") },
++    )
++}
+diff --git a/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicyTest.kt b/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicyTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicyTest.kt
+@@ -0,0 +1,84 @@
++package io.legado.app.feature.reader.core.transition
++
++import io.legado.app.feature.reader.core.model.ReaderPage
++import io.legado.app.feature.reader.core.model.ReaderPageId
++import org.junit.Assert.*
++import org.junit.Test
++
++class ReaderWaterRipplePolicyTest {
++    private fun page(chapter: Int = 0, index: Int = 0, placeholder: Boolean = false) = ReaderPage(
++        id = ReaderPageId(chapter, index), chapterTitle = "Chapter", text = "Page",
++        widthPx = 600, heightPx = 800, contentTopPx = 0f, contentBottomPx = 800f,
++        elements = emptyList(), revision = 0L, isPlaceholder = placeholder,
++    )
++
++    @Test fun `water ripple has a distinct persisted value and no software transforms`() {
++        assertEquals(ReaderTransitionMode.WATER_RIPPLE, ReaderTransitionMode.fromPageAnim(9))
++        val turn = ReaderPageTransition(ReaderTurnDirection.NEXT, -200f, 400f, true)
++        val transforms = turn.transforms(ReaderTransitionMode.WATER_RIPPLE)
++        assertEquals(0f, transforms.current.translationX, 0f)
++        assertNull(transforms.next)
++        assertNull(transforms.previous)
++    }
++
++    @Test fun `capability requires brand version and command`() {
++        assertTrue(ReaderWaterRipplePolicy.isSupported("IREADER", "other", "4.2", true))
++        assertTrue(ReaderWaterRipplePolicy.isSupported("other", "iReader", "5.0", true))
++        for (version in listOf(null, "", "unknown", "3.9")) {
++            assertFalse(ReaderWaterRipplePolicy.isSupported("iReader", "iReader", version, true))
++        }
++        assertFalse(ReaderWaterRipplePolicy.isSupported("other", "other", "4.0", true))
++        assertFalse(ReaderWaterRipplePolicy.isSupported("iReader", "iReader", "4.0", false))
++    }
++
++    @Test fun `direction and speed match reference commands for every rotation`() {
++        val next = listOf(1, 4, 2, 3)
++        val previous = listOf(2, 3, 1, 4)
++        for (rotation in 0..3) for (speed in ReaderWaterRippleSpeed.entries) {
++            assertEquals(next[rotation] or speed.commandFlag,
++                ReaderWaterRipplePolicy.commandCode(ReaderTurnDirection.NEXT, rotation, speed))
++            assertEquals(previous[rotation] or speed.commandFlag,
++                ReaderWaterRipplePolicy.commandCode(ReaderTurnDirection.PREVIOUS, rotation, speed))
++        }
++        assertEquals(ReaderWaterRippleSpeed.STANDARD, ReaderWaterRippleSpeed.fromValue(-1))
++        assertEquals(ReaderWaterRippleSpeed.STANDARD, ReaderWaterRippleSpeed.fromValue(3))
++    }
++
++    @Test fun `only a committed readable change sends a command`() {
++        val commands = mutableListOf<String>()
++        val session = ReaderWaterRippleSession(true, commands::add) { throw AssertionError(it) }
++        val origin = page()
++        val target = page(index = 1)
++        for ((from, to) in listOf(
++            origin to null, null to target, origin to origin,
++            origin to origin.copy(revision = 1L), origin to target.copy(isPlaceholder = true),
++            origin.copy(isPlaceholder = true) to target,
++        )) {
++            session.onPageChanged(ReaderTurnDirection.NEXT, 0, ReaderWaterRippleSpeed.STANDARD, from, to)
++        }
++        assertTrue(commands.isEmpty())
++        session.onPageChanged(ReaderTurnDirection.NEXT, 0, ReaderWaterRippleSpeed.STANDARD, origin, target)
++        assertEquals(listOf("next-effect-type 65"), commands)
++    }
++
++    @Test fun `chapter boundary direction does not depend on page number reset`() {
++        val commands = mutableListOf<String>()
++        val session = ReaderWaterRippleSession(true, commands::add) { throw AssertionError(it) }
++        val last = page(chapter = 0, index = 99)
++        val first = page(chapter = 1, index = 0)
++        session.onPageChanged(ReaderTurnDirection.NEXT, 0, ReaderWaterRippleSpeed.FAST, last, first)
++        session.onPageChanged(ReaderTurnDirection.PREVIOUS, 0, ReaderWaterRippleSpeed.FAST, first, last)
++        assertEquals(listOf("next-effect-type 1", "next-effect-type 2"), commands)
++    }
++
++    @Test fun `unsupported and failed sessions never retry hardware`() {
++        var calls = 0
++        var failures = 0
++        val unsupported = ReaderWaterRippleSession(false, { calls++ }) { failures++ }
++        unsupported.onPageChanged(ReaderTurnDirection.NEXT, 0, ReaderWaterRippleSpeed.FAST, page(), page(index = 1))
++        val failed = ReaderWaterRippleSession(true, { calls++; error("unavailable") }) { failures++ }
++        repeat(3) { failed.onPageChanged(ReaderTurnDirection.NEXT, 0, ReaderWaterRippleSpeed.FAST, page(), page(index = 1)) }
++        assertEquals(1, calls)
++        assertEquals(1, failures)
++    }
++}
+diff --git a/app/src/test/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptionsTest.kt b/app/src/test/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptionsTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptionsTest.kt
+@@ -0,0 +1,17 @@
++package io.legado.app.feature.reader.model
++
++import io.legado.app.constant.PageAnim
++import org.junit.Assert.*
++import org.junit.Test
++
++class ReaderPageAnimationOptionsTest {
++    @Test fun `compatibility filters only water ripple and preserves persisted values`() {
++        val ordinary = readerPageAnimationOptions(false)
++        val supported = readerPageAnimationOptions(true)
++        assertEquals(listOf(0, 1, 2, 6, 7, 8, 3, 4, 5), ordinary.map { it.value })
++        assertEquals(ordinary, supported.filter { it.value != PageAnim.waterRipplePageAnim })
++        assertEquals(1, supported.count { it.value == 9 })
++        assertEquals(-1, readerPageAnimationOptions(true, true).first().value)
++        assertEquals(ordinary.size + 1, readerPageAnimationOptions(false, true).size)
++    }
++}

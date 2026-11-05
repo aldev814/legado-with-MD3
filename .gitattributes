@@ -1,0 +1,3 @@
+
+# Patch payload includes upstream whitespace as context.
+/.github/ireader/patches/*.patch -whitespace
