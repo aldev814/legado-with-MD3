@@ -1,13 +1,23 @@
 diff --git a/app/build.gradle.kts b/app/build.gradle.kts
-index f75333b61b2952207709bec0871b7475e36ef494..363a7882b8164bdaeb0ccc5baacfa6d1625b05ac 100644
+index f75333b61b2952207709bec0871b7475e36ef494..7e13a31bdc26c0ba68477b9cb523f3ac97c71b21 100644
 --- a/app/build.gradle.kts
 +++ b/app/build.gradle.kts
-@@ -60,7 +60,7 @@
+@@ -9,7 +9,6 @@
+     alias(libs.plugins.kotlin.serialization)
+     alias(libs.plugins.room)
+     alias(libs.plugins.ksp)
+-    alias(libs.plugins.google.services)
+     alias(libs.plugins.baselineprofile)
+ }
+ 
+@@ -60,7 +59,9 @@
      }
  
      defaultConfig {
 -        applicationId = "io.legato.kazusa"
 +        applicationId = "io.legato.kazusa.ireader"
++        // This independent fork does not use the upstream Firebase project.
++        buildConfigField("boolean", "FIREBASE_SUPPORTED", "false")
          minSdk = 26
          targetSdk = 37
          versionCode = System.getenv("COMMIT_NUMBER")?.toInt()?.let { 10000 + it } ?: 32640
@@ -62,3 +72,80 @@ index b94f5990124273fbef6e60c67904f05557ea313d..9ef04680d688eb547c7c2029c97ea9d4
  
      @Test
      fun `primary rate limit reports reset time`() {
+diff --git a/app/src/main/java/io/legado/app/utils/FirebaseManager.kt b/app/src/main/java/io/legado/app/utils/FirebaseManager.kt
+index 852855715c11691e70d7ea4bf09af6071b8cffe0..f4bb6824a722222d50f1f6ca834ccb93ab892429 100644
+--- a/app/src/main/java/io/legado/app/utils/FirebaseManager.kt
++++ b/app/src/main/java/io/legado/app/utils/FirebaseManager.kt
+@@ -8,11 +8,13 @@
+ 
+ object FirebaseManager {
+ 
++    val isSupported: Boolean = io.legado.app.BuildConfig.FIREBASE_SUPPORTED
++
+     private val otherSettingsGateway
+         get() = GlobalContext.get().get<OtherSettingsGateway>()
+ 
+     val isEnabled: Boolean
+-        get() = otherSettingsGateway.currentSettings.firebaseEnable
++        get() = isSupported && otherSettingsGateway.currentSettings.firebaseEnable
+ 
+     fun init(context: Context) {
+         applyState(context, isEnabled)
+@@ -23,6 +25,7 @@
+     }
+ 
+     private fun applyState(context: Context, enabled: Boolean) {
++        if (!isSupported) return
+         if (enabled) {
+             if (FirebaseApp.getApps(context).isEmpty()) {
+                 FirebaseApp.initializeApp(context)
+diff --git a/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt b/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt
+index 0da7a408723250f6de264b078c250dfe928bc65d..a9726c01cf015652387618b48c66a299f38bf46a 100644
+--- a/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt
++++ b/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt
+@@ -193,14 +193,16 @@
+                         ),
+                         onClick = { onIntent(PrivateConfigIntent.RequestBatteryPermission) }
+                     )
+-                    SwitchSettingItem(
+-                        title = stringResource(R.string.firebase_enable_title),
+-                        description = stringResource(R.string.firebase_enable_summary),
+-                        checked = state.firebaseEnable,
+-                        onCheckedChange = {
+-                            onIntent(PrivateConfigIntent.SetFirebaseEnabled(it))
+-                        }
+-                    )
++                    if (io.legado.app.BuildConfig.FIREBASE_SUPPORTED) {
++                        SwitchSettingItem(
++                            title = stringResource(R.string.firebase_enable_title),
++                            description = stringResource(R.string.firebase_enable_summary),
++                            checked = state.firebaseEnable,
++                            onCheckedChange = {
++                                onIntent(PrivateConfigIntent.SetFirebaseEnabled(it))
++                            }
++                        )
++                    }
+                 }
+             }
+         }
+diff --git a/app/src/test/java/io/legado/app/help/update/ForkIdentityTest.kt b/app/src/test/java/io/legado/app/help/update/ForkIdentityTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/io/legado/app/help/update/ForkIdentityTest.kt
+@@ -0,0 +1,16 @@
++package io.legado.app.help.update
++
++import io.legado.app.BuildConfig
++import io.legado.app.utils.FirebaseManager
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Test
++
++class ForkIdentityTest {
++    @Test fun independentPackageDoesNotReuseUpstreamFirebase() {
++        assertEquals("io.legato.kazusa.ireader", BuildConfig.APPLICATION_ID.removeSuffix(".debug"))
++        assertFalse(BuildConfig.FIREBASE_SUPPORTED)
++        assertFalse(FirebaseManager.isSupported)
++        assertFalse(FirebaseManager.isEnabled)
++    }
++}
