@@ -27,6 +27,16 @@ def prepare(source, plan):
     # Match upstream CI: the domestic mirrors are unreliable on GitHub runners.
     settings = source / 'settings.gradle'
     settings.write_text(''.join(line for line in settings.read_text().splitlines(keepends=True) if 'maven.aliyun.com' not in line))
+    # The upstream wrapper's 10s/no-retry default timed out on a clean CI runner.
+    # Preserve its distribution URL and SHA256; only adjust the download budget.
+    wrapper = source / 'gradle/wrapper/gradle-wrapper.properties'
+    values = {'networkTimeout': '120000', 'retries': '3', 'retryBackOffMs': '2000'}
+    lines = []
+    for line in wrapper.read_text().splitlines():
+        key = line.partition('=')[0]
+        lines.append(key + '=' + values.pop(key) if key in values else line)
+    lines.extend(key + '=' + value for key, value in values.items())
+    wrapper.write_text('\n'.join(lines) + '\n')
     subprocess.run(['git', 'diff', '--check'], cwd=source, check=True)
     subprocess.run(['git', 'diff', '--cached', '--check'], cwd=source, check=True)
 

@@ -42,6 +42,22 @@ index 448c56579f7858890c7a6772dd508960ae33e516..3f78aadf1c24dd2d2ace04061c9d1c9d
      UnderlineHeight,
      UnderlinePadding,
      PaddingTop,
+diff --git a/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt b/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt
+index df7c1e2a00fae3db0882a65c6ae13051229297de..fd457738787dfdd131c37cd11142633db5201720 100644
+--- a/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt
++++ b/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt
+@@ -123,4 +123,10 @@ data class ReadSettings(
+     val showMenuIcon: Boolean = false,
+     val titleBarCompact: Boolean = false,
+     val moreActionsConfig: String = "",
+-)
++) {
++    /** The nine-zone click configuration must retain at least one menu entry. */
++    fun hasMenuClickArea(): Boolean =
++        clickActionTL * clickActionTC * clickActionTR *
++            clickActionML * clickActionMC * clickActionMR *
++            clickActionBL * clickActionBC * clickActionBR == 0
++}
 diff --git a/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt b/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
 index 22a3cfad34d960ddf2331086670d3e5c24ae6275..c6fcee3da27987123c4de8e995e04a73681e9aa7 100644
 --- a/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
@@ -249,7 +265,7 @@ index a8dada4eb2a11078b750afa42f563e571fceb2e8..5b8c04aeb377cdf0367d303a8301cdeb
          override val actions = emptySet<ConfigUpdateAction>()
      }
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt
-index 4a9bf2fb3919d685f1fc021175217374e35ba3a0..3a1eb022ec5dce7ddcffd1cea545dd935d448005 100644
+index 4a9bf2fb3919d685f1fc021175217374e35ba3a0..9cfc1a0de1a726aaa8aebb012f7598a0471a9f8b 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt
 +++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookRouteScreen.kt
 @@ -75,6 +75,7 @@ import io.legado.app.feature.reader.ReaderBackgroundSurface
@@ -265,7 +281,7 @@ index 4a9bf2fb3919d685f1fc021175217374e35ba3a0..3a1eb022ec5dce7ddcffd1cea545dd93
          inMultiWindow = controller.isInMultiWindowModeCompat,
      )
 +    val rippleView = LocalView.current
-+    val waterRippleSession = viewModel.waterRippleSession
++    val waterRippleSession = readerSessionViewModel.waterRippleSession
      val context = LocalContext.current
      val lifecycleOwner = LocalLifecycleOwner.current
      val appUiConfiguration = LocalAppUiConfiguration.current
@@ -313,7 +329,7 @@ index 889793b4b0148dfa91bd1b45906d00cd5c3aaeb7..eabfe46fc869dc717229a2a9880ef7ce
                          onAnimChanged = { onIntent(ReadBookIntent.PageAnimChanged) },
                      )
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
-index 725eaea70749625c533e18466bb6efa3027e1adb..b7fb1e3db5ad96e8eca61844bd8ebee03eb0ae98 100644
+index 725eaea70749625c533e18466bb6efa3027e1adb..3c43cf1643fe8f065e7b8c340a83086cfe3917e7 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
 +++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
 @@ -52,6 +52,7 @@ import io.legado.app.domain.usecase.SyncReadAloudVoicesUseCase
@@ -324,19 +340,7 @@ index 725eaea70749625c533e18466bb6efa3027e1adb..b7fb1e3db5ad96e8eca61844bd8ebee0
  import io.legado.app.feature.reader.core.navigation.ReaderChapterPagePosition
  import io.legado.app.feature.reader.core.navigation.ReaderPageContext
  import io.legado.app.help.book.BookHelp
-@@ -156,6 +157,11 @@ class ReadBookViewModel(
-     private val readRecordRepository: ReadRecordRepository,
-     private val readerSession: ReaderSession,
- ) : BaseViewModel(application) {
-+    // Keep command failure suppression across configuration recreation for this reading session.
-+    internal val waterRippleSession by lazy {
-+        SmartOsPageTurnEffect.newSession()
-+    }
-+
-     // --- MVI State ---
- 
-     private val _uiState = MutableStateFlow(ReadBookUiState())
-@@ -1614,6 +1620,7 @@ class ReadBookViewModel(
+@@ -1614,6 +1615,7 @@ class ReadBookViewModel(
              }
  
              is ReadBookIntent.PageAnimChanged -> {
@@ -344,7 +348,20 @@ index 725eaea70749625c533e18466bb6efa3027e1adb..b7fb1e3db5ad96e8eca61844bd8ebee0
                  _effects.tryEmit(ReadBookEffect.PageAnimChanged)
              }
  
-@@ -1967,9 +1974,13 @@ class ReadBookViewModel(
+@@ -1935,12 +1937,6 @@ class ReadBookViewModel(
+         }
+     }
+ 
+-    private fun ReadPreferences.hasMenuClickArea(): Boolean {
+-        return clickActionTL * clickActionTC * clickActionTR *
+-                clickActionML * clickActionMC * clickActionMR *
+-                clickActionBL * clickActionBC * clickActionBR == 0
+-    }
+-
+     // --- State Sync ---
+ 
+     private fun buildStyleConfig(): ReadBookStyleConfig {
+@@ -1967,9 +1963,13 @@ class ReadBookViewModel(
              textColorEInk = dur.getTextColorEInk(),
              textFont = config.textFont,
              titleFont = config.titleFont,
@@ -379,6 +396,22 @@ index 9b6726812df3949a94b9f040158202a8b418261f..76b3245301be82419aa21c0be0fcdc02
          is ConfigUpdate.TextShadow -> booleanMutation(ReadStyleBooleanKey.TextShadow, value)
          is ConfigUpdate.ShadowRadius -> floatMutation(ReadStyleFloatKey.ShadowRadius, value)
          is ConfigUpdate.ShadowDx -> floatMutation(ReadStyleFloatKey.ShadowDx, value)
+diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReaderRenderUiState.kt b/app/src/main/java/io/legado/app/ui/book/read/ReaderRenderUiState.kt
+index c48d12650d463be3ba145111d7f0b4d37cd537c9..2f9b4c450e66197be71cbdce8adec898269e7628 100644
+--- a/app/src/main/java/io/legado/app/ui/book/read/ReaderRenderUiState.kt
++++ b/app/src/main/java/io/legado/app/ui/book/read/ReaderRenderUiState.kt
+@@ -18,6 +18,11 @@ data class ReaderRenderUiState(
+ 
+ /** Lightweight state owner for the hot Canvas path only. */
+ class ReaderSessionViewModel : ViewModel() {
++    // Hardware failure suppression follows the rendering session across recreation.
++    internal val waterRippleSession by lazy {
++        io.legado.app.feature.reader.platform.SmartOsPageTurnEffect.newSession()
++    }
++
+     private val _uiState = MutableStateFlow(ReaderRenderUiState())
+     val uiState = _uiState.asStateFlow()
+     private var pendingState = _uiState.value
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt b/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
 index f573fc817591c8fa52a4127de786fe424f35e783..1604b60e6dd4c39f0c28d79065eac3964aaf407d 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
@@ -804,6 +837,34 @@ index b17f623789734fad0776ee196d9cff33844ba022..dac261c18498a84be4bce13e11ceb794
          )
      }
  }
+diff --git a/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt b/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt
+index bb4b0dc273fef500c019fb1ed206917f562725c1..f20444fc913a96a31e3f5bd894b1547f7d744c16 100644
+--- a/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt
++++ b/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt
+@@ -117,7 +117,9 @@ class ReadBookDomainSplitBoundaryTest {
+      * 行数只作粗棘轮：散落在 VM 的域内状态比总行数更能说明边界是否干净，各域另受
+      * `域状态不回流进 ReadBookViewModel` 守卫约束。
+      *
+-     * 当前上限 2772：由 2763 放宽 9 行，全部是新增「离线缓存」域的接线，实现已摘进
++     * 当前上限 2772：硬件翻页会话移入既有 ReaderSessionViewModel，菜单点击区域规则
++     * 移入 ReadSettings，宿主保留设置快照与意图编排；没有放宽行数门禁。
++     * 回溯（上一档 2772）：由 2763 放宽 9 行，全部是新增「离线缓存」域的接线，实现已摘进
+      * `ReadBookCacheDelegate`（章节筛选、范围预览的 IO 与文案都在里面），VM 只剩：
+      * 两个意图分支转发（相对上一档净增 0）、`cacheDelegate` 的 lazy 装配（+7）与
+      * 预览投影进 `_uiState`（+1，`_uiState` 只有 VM 能碰）、一条域注释与空行（+2）。
+@@ -329,6 +331,12 @@ class ReadBookDomainSplitBoundaryTest {
+ 
+     private companion object {
+         val DOMAINS = listOf(
++            DomainSplit(
++                name = "硬件翻页会话",
++                delegateFile = "io/legado/app/ui/book/read/ReaderRenderUiState.kt",
++                stateFields = setOf("waterRippleSession"),
++                stateTypes = listOf("ReaderWaterRippleSession"),
++            ),
+             // 多角色分配域：确认/创建/取消与收尾全在 delegate，VM 只剩三个意图分支转发。
+             // 标记读写与角色表访问全收口 CastAssignmentStore（架构护栏）。
+             DomainSplit(
 diff --git a/app/src/main/java/io/legado/app/feature/reader/components/WaterRippleSpeedSetting.kt b/app/src/main/java/io/legado/app/feature/reader/components/WaterRippleSpeedSetting.kt
 new file mode 100644
 --- /dev/null
@@ -974,6 +1035,38 @@ new file mode 100644
 +        sendCommand = { value -> checkNotNull(command).invoke(null, value); Unit },
 +        onFailure = { Timber.tag("SmartOsPageTurn").w(it, "Water ripple disabled for this reader session") },
 +    )
++}
+diff --git a/app/src/test/java/io/legado/app/domain/model/settings/ReadSettingsClickAreaTest.kt b/app/src/test/java/io/legado/app/domain/model/settings/ReadSettingsClickAreaTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/io/legado/app/domain/model/settings/ReadSettingsClickAreaTest.kt
+@@ -0,0 +1,27 @@
++package io.legado.app.domain.model.settings
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class ReadSettingsClickAreaTest {
++    @Test fun defaultGridRetainsAMenuEntry() {
++        assertTrue(ReadSettings().hasMenuClickArea())
++    }
++
++    @Test fun gridWithoutAMenuIsRecognized() {
++        assertFalse(ReadSettings(clickActionMC = 1).hasMenuClickArea())
++    }
++
++    @Test fun everyZoneCanProvideTheMenuEntry() {
++        val withoutMenu = ReadSettings(clickActionMC = 1)
++        val variants = listOf(
++            withoutMenu.copy(clickActionTL = 0), withoutMenu.copy(clickActionTC = 0),
++            withoutMenu.copy(clickActionTR = 0), withoutMenu.copy(clickActionML = 0),
++            withoutMenu.copy(clickActionMC = 0), withoutMenu.copy(clickActionMR = 0),
++            withoutMenu.copy(clickActionBL = 0), withoutMenu.copy(clickActionBC = 0),
++            withoutMenu.copy(clickActionBR = 0),
++        )
++        variants.forEach { assertTrue(it.hasMenuClickArea()) }
++    }
 +}
 diff --git a/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicyTest.kt b/app/src/test/java/io/legado/app/feature/reader/core/transition/ReaderWaterRipplePolicyTest.kt
 new file mode 100644

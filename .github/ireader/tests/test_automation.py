@@ -102,6 +102,10 @@ class SourceTest(unittest.TestCase):
         self.git('config', 'user.email', 'test@example.org')
         self.git('config', 'commit.gpgsign', 'false')
         (self.source / 'file.txt').write_text('before\n')
+        wrapper = self.source / 'gradle/wrapper/gradle-wrapper.properties'
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_text('distributionUrl=https://services.gradle.org/distributions/gradle-9.8.0-bin.zip\n'
+                           'distributionSha256Sum=fixture-hash\nnetworkTimeout=10000\nretries=0\n')
         (self.source / 'settings.gradle').write_text('mavenCentral()\nmaven { url "https://maven.aliyun.com/repository/public" }\n')
         workflows = self.source / '.github/workflows'
         workflows.mkdir(parents=True)
@@ -123,6 +127,11 @@ class SourceTest(unittest.TestCase):
         self.assertEqual((self.source / 'file.txt').read_text(), 'after\n')
         self.assertFalse((self.source / '.github/workflows').exists())
         self.assertNotIn('aliyun', (self.source / 'settings.gradle').read_text())
+        wrapper = (self.source / 'gradle/wrapper/gradle-wrapper.properties').read_text()
+        self.assertIn('distributionSha256Sum=fixture-hash', wrapper)
+        self.assertIn('distributionUrl=https://services.gradle.org/distributions/gradle-9.8.0-bin.zip', wrapper)
+        self.assertIn('networkTimeout=120000', wrapper)
+        self.assertIn('retries=3', wrapper)
 
     def test_dirty_or_wrong_release_is_rejected(self):
         with self.assertRaises(ValueError):

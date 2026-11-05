@@ -7,6 +7,7 @@
 
 - 每小时第 23 分钟检查上游最新的已发布正式 Release，不追踪 main、draft 或 prerelease。
 - 支持 Actions → **iReader - Patch and release upstream stable** 手动运行；`upstream_tag` 留空取最新正式版。
+- Gradle wrapper 保持上游下载地址和 SHA256，下载超时调整为 120 秒、重试 3 次，避免首次冷下载的 10 秒超时。
 - 从检测时解析出的完整 commit SHA 检出上游，然后按顺序 `git apply --3way --index` 应用补丁；冲突即失败，不跳过补丁。
 - core/comic 分别运行 JDK 21、完整 Debug 单元测试、lint、架构检查和 Release/R8 构建。每个产品单独 runner，单 worker，Kotlin 堆上限 6GB。
 - 用固定签名签署并验证六个 APK：每个产品各 universal、arm64-v8a、armeabi-v7a；校验包名、版本名、versionCode、证书和 16KB ZIP 对齐。
