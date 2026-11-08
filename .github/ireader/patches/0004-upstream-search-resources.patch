@@ -1,0 +1,22 @@
+diff --git a/app/src/main/java/io/legado/app/feature/settings/search/SettingsSearchScreen.kt b/app/src/main/java/io/legado/app/feature/settings/search/SettingsSearchScreen.kt
+index a3015ffe61900a480fbad239f52bc220bcfbec59..c9b872cee219cb8ef25d51978f4d0c2d78677b65 100644
+--- a/app/src/main/java/io/legado/app/feature/settings/search/SettingsSearchScreen.kt
++++ b/app/src/main/java/io/legado/app/feature/settings/search/SettingsSearchScreen.kt
+@@ -13,7 +13,7 @@
+ import androidx.compose.runtime.remember
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.platform.LocalConfiguration
+-import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.platform.LocalResources
+ import androidx.compose.ui.platform.LocalFocusManager
+ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+ import androidx.compose.ui.platform.testTag
+@@ -46,7 +46,7 @@
+     onOpenSetting: (String) -> Unit,
+     viewModel: SettingsSearchViewModel = koinViewModel(),
+ ) {
+-    val context = LocalContext.current
++    val context = LocalResources.current
+     val configuration = LocalConfiguration.current
+     // Resolve at the Android presentation boundary, and rebuild on app-language changes.
+     val index = remember(context, configuration) {
