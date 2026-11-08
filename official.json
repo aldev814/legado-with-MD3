@@ -1,129 +1,129 @@
 {
-  "tag_name": "3.26.23-ireader.1",
-  "name": "Legado iReader 3.26.23-ireader.1",
-  "body": "基于上游正式版 [3.26.23](https://github.com/HapeLee/legado-with-MD3/releases/tag/3.26.23)，应用掌阅水波纹补丁第 1 次修订。\n\n- 正文翻页动画增加“掌阅水波纹”，仅兼容掌阅 SmartOS 4+ 显示；支持旋转及独立三档速度，默认不启用。\n- 独立包名 `io.legato.kazusa.ireader`，名称“阅读”，可与原版及阅读·D 共存；首次使用可通过应用内备份/恢复迁移。\n- core 为基础包，comic 包含本地漫画引擎；同版本、同签名，应用内更新仅检查本 fork 并匹配当前产品。\n- 首次安装不确定架构时选 universal。后续本 fork 版本使用同一固定签名，可覆盖升级。\n- 两个产品通过单元测试、lint、架构检查和 Release/R8 构建后才发布；R8 mapping 按产品分别附带。\n\n源码与签名指纹见 build-metadata.json，文件校验见 SHA256SUMS，补丁配方见 ireader-patches.zip。设备实际刷新表现仍取决于掌阅固件。\n",
+  "tag_name": "3.26.24-ireader.2",
+  "name": "Legado iReader 3.26.24-ireader.2",
+  "body": "基于上游正式版 [3.26.24](https://github.com/HapeLee/legado-with-MD3/releases/tag/3.26.24)，应用掌阅水波纹补丁第 2 次修订。\n\n- 正文翻页动画增加“掌阅水波纹”，仅兼容掌阅 SmartOS 4+ 显示；支持旋转及独立三档速度，默认不启用。\n- 独立包名 `io.legato.kazusa.ireader`，名称“阅读”，可与原版及阅读·D 共存；首次使用可通过应用内备份/恢复迁移。\n- core 为基础包，comic 包含本地漫画引擎；同版本、同签名，应用内更新仅检查本 fork 并匹配当前产品。\n- 首次安装不确定架构时选 universal。后续本 fork 版本使用同一固定签名，可覆盖升级。\n- 两个产品通过单元测试、lint、架构检查和 Release/R8 构建后才发布；R8 mapping 按产品分别附带。\n\n源码与签名指纹见 build-metadata.json，文件校验见 SHA256SUMS，补丁配方见 ireader-patches.zip。设备实际刷新表现仍取决于掌阅固件。\n",
   "prerelease": false,
-  "created_at": "2026-11-05T15:42:17Z",
+  "created_at": "2026-11-08T07:11:09Z",
   "assets": [
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/build-metadata.json",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/build-metadata.json",
       "content_type": "application/json",
-      "created_at": "2026-11-05T15:42:25Z",
+      "created_at": "2026-11-08T07:11:16Z",
       "download_count": 0,
-      "id": 713903663,
+      "id": 723203867,
       "name": "build-metadata.json",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903663"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203867"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/ireader-patches.zip",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/ireader-patches.zip",
       "content_type": "application/zip",
-      "created_at": "2026-11-05T15:42:25Z",
+      "created_at": "2026-11-08T07:11:16Z",
       "download_count": 0,
-      "id": 713903679,
+      "id": 723203871,
       "name": "ireader-patches.zip",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903679"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203871"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/legado-3.26.23-ireader.1-comic-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/legado-3.26.24-ireader.2-comic-arm64-v8a.apk",
       "content_type": "application/vnd.android.package-archive",
-      "created_at": "2026-11-05T15:42:21Z",
+      "created_at": "2026-11-08T07:11:13Z",
       "download_count": 0,
-      "id": 713903400,
-      "name": "legado-3.26.23-ireader.1-comic-arm64-v8a.apk",
+      "id": 723203657,
+      "name": "legado-3.26.24-ireader.2-comic-arm64-v8a.apk",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903400"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203657"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/legado-3.26.23-ireader.1-comic-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/legado-3.26.24-ireader.2-comic-armeabi-v7a.apk",
       "content_type": "application/vnd.android.package-archive",
-      "created_at": "2026-11-05T15:42:21Z",
+      "created_at": "2026-11-08T07:11:13Z",
       "download_count": 0,
-      "id": 713903407,
-      "name": "legado-3.26.23-ireader.1-comic-armeabi-v7a.apk",
+      "id": 723203659,
+      "name": "legado-3.26.24-ireader.2-comic-armeabi-v7a.apk",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903407"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203659"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/legado-3.26.23-ireader.1-comic-universal.apk",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/legado-3.26.24-ireader.2-comic-universal.apk",
       "content_type": "application/vnd.android.package-archive",
-      "created_at": "2026-11-05T15:42:21Z",
+      "created_at": "2026-11-08T07:11:13Z",
       "download_count": 0,
-      "id": 713903402,
-      "name": "legado-3.26.23-ireader.1-comic-universal.apk",
+      "id": 723203653,
+      "name": "legado-3.26.24-ireader.2-comic-universal.apk",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903402"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203653"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/legado-3.26.23-ireader.1-core-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/legado-3.26.24-ireader.2-core-arm64-v8a.apk",
       "content_type": "application/vnd.android.package-archive",
-      "created_at": "2026-11-05T15:42:21Z",
+      "created_at": "2026-11-08T07:11:13Z",
       "download_count": 0,
-      "id": 713903405,
-      "name": "legado-3.26.23-ireader.1-core-arm64-v8a.apk",
+      "id": 723203660,
+      "name": "legado-3.26.24-ireader.2-core-arm64-v8a.apk",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903405"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203660"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/legado-3.26.23-ireader.1-core-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/legado-3.26.24-ireader.2-core-armeabi-v7a.apk",
       "content_type": "application/vnd.android.package-archive",
-      "created_at": "2026-11-05T15:42:21Z",
+      "created_at": "2026-11-08T07:11:13Z",
       "download_count": 0,
-      "id": 713903412,
-      "name": "legado-3.26.23-ireader.1-core-armeabi-v7a.apk",
+      "id": 723203658,
+      "name": "legado-3.26.24-ireader.2-core-armeabi-v7a.apk",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903412"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203658"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/legado-3.26.23-ireader.1-core-universal.apk",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/legado-3.26.24-ireader.2-core-universal.apk",
       "content_type": "application/vnd.android.package-archive",
-      "created_at": "2026-11-05T15:42:22Z",
+      "created_at": "2026-11-08T07:11:14Z",
       "download_count": 0,
-      "id": 713903489,
-      "name": "legado-3.26.23-ireader.1-core-universal.apk",
+      "id": 723203766,
+      "name": "legado-3.26.24-ireader.2-core-universal.apk",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903489"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203766"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/mapping-comic.txt",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/mapping-comic.txt",
       "content_type": "text/plain; charset=utf-8",
-      "created_at": "2026-11-05T15:42:22Z",
+      "created_at": "2026-11-08T07:11:14Z",
       "download_count": 0,
-      "id": 713903506,
+      "id": 723203775,
       "name": "mapping-comic.txt",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903506"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203775"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/mapping-core.txt",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/mapping-core.txt",
       "content_type": "text/plain; charset=utf-8",
-      "created_at": "2026-11-05T15:42:24Z",
+      "created_at": "2026-11-08T07:11:16Z",
       "download_count": 0,
-      "id": 713903568,
+      "id": 723203834,
       "name": "mapping-core.txt",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903568"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203834"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/RELEASE_NOTES.md",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/RELEASE_NOTES.md",
       "content_type": "text/markdown; charset=utf-8",
-      "created_at": "2026-11-05T15:42:26Z",
+      "created_at": "2026-11-08T07:11:16Z",
       "download_count": 0,
-      "id": 713903712,
+      "id": 723203891,
       "name": "RELEASE_NOTES.md",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903712"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203891"
     },
     {
-      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.23-ireader.1/SHA256SUMS",
+      "browser_download_url": "https://github.com/aldev814/legado-with-MD3/releases/download/3.26.24-ireader.2/SHA256SUMS",
       "content_type": "application/octet-stream",
-      "created_at": "2026-11-05T15:42:25Z",
+      "created_at": "2026-11-08T07:11:16Z",
       "download_count": 0,
-      "id": 713903647,
+      "id": 723203836,
       "name": "SHA256SUMS",
       "state": "uploaded",
-      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/713903647"
+      "url": "https://api.github.com/repos/aldev814/legado-with-MD3/releases/assets/723203836"
     }
   ]
 }
