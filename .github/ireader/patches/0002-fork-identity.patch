@@ -100,34 +100,18 @@ index 852855715c11691e70d7ea4bf09af6071b8cffe0..f4bb6824a722222d50f1f6ca834ccb93
              if (FirebaseApp.getApps(context).isEmpty()) {
                  FirebaseApp.initializeApp(context)
 diff --git a/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt b/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt
-index 0da7a408723250f6de264b078c250dfe928bc65d..a9726c01cf015652387618b48c66a299f38bf46a 100644
+index 6754e485746f607b83ad005d85bbf3496be6fe26..4861ff8d5b027794b9efd920a680f3d5a11e41fb 100644
 --- a/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt
 +++ b/app/src/main/java/io/legado/app/ui/config/privateConfig/PrivateConfigScreen.kt
-@@ -193,14 +193,16 @@
-                         ),
-                         onClick = { onIntent(PrivateConfigIntent.RequestBatteryPermission) }
-                     )
--                    SwitchSettingItem(
--                        title = stringResource(R.string.firebase_enable_title),
--                        description = stringResource(R.string.firebase_enable_summary),
--                        checked = state.firebaseEnable,
--                        onCheckedChange = {
--                            onIntent(PrivateConfigIntent.SetFirebaseEnabled(it))
--                        }
--                    )
-+                    if (io.legado.app.BuildConfig.FIREBASE_SUPPORTED) {
-+                        SwitchSettingItem(
-+                            title = stringResource(R.string.firebase_enable_title),
-+                            description = stringResource(R.string.firebase_enable_summary),
-+                            checked = state.firebaseEnable,
-+                            onCheckedChange = {
-+                                onIntent(PrivateConfigIntent.SetFirebaseEnabled(it))
-+                            }
-+                        )
-+                    }
-                 }
-             }
-         }
+@@ -214,7 +214,7 @@
+                             onClick = { onIntent(PrivateConfigIntent.RequestBatteryPermission) }
+                         )
+                     }
+-                    SearchableSetting("private.firebase_enable_title") {
++                    if (io.legado.app.BuildConfig.FIREBASE_SUPPORTED) SearchableSetting("private.firebase_enable_title") {
+                         SwitchSettingItem(
+                             title = stringResource(R.string.firebase_enable_title),
+                             description = stringResource(R.string.firebase_enable_summary),
 diff --git a/app/src/test/java/io/legado/app/help/update/ForkIdentityTest.kt b/app/src/test/java/io/legado/app/help/update/ForkIdentityTest.kt
 new file mode 100644
 --- /dev/null
