@@ -46,6 +46,7 @@ python3 .github/ireader/setup_signing.py --upload
 
 `0001-smartos-water-ripple.patch` 是已验证正文水波纹改动，基于上游正式版 `3.26.23` / `35d013a0803931c333156d847ef1d1f3f324d83f`。
 `0002-fork-identity.patch` 配置独立包名、更新仓库、正式证书以及 fork 版本比较测试。修订 2 适配上游 `3.26.24`：仅在 Firebase 搜索包装调用前增加能力条件，不重排开关内部代码，以减少后续上游 UI 变更造成的冲突。
+`0003-upstream-footer-test.patch` 仅修正上游漫画页脚测试的三处页码查询：新版动画文字已将语义合并为 `1/57`，测试也按完整页码查询；原有位置、对齐和隐藏断言全部保留，不修改漫画功能。
 
 ```sh
 python3 -m unittest discover -s .github/ireader/tests -v

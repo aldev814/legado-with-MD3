@@ -1,0 +1,31 @@
+diff --git a/app/src/test/java/io/legado/app/ui/book/manga/MangaTranslationFooterTest.kt b/app/src/test/java/io/legado/app/ui/book/manga/MangaTranslationFooterTest.kt
+index 4724145bdd3f52e43d3d78871291bebf4a9c387e..6ce078699871408b5c593169332dc2eaf48b911b 100644
+--- a/app/src/test/java/io/legado/app/ui/book/manga/MangaTranslationFooterTest.kt
++++ b/app/src/test/java/io/legado/app/ui/book/manga/MangaTranslationFooterTest.kt
+@@ -70,7 +70,7 @@
+         compose.onNodeWithText(initial).assertIsDisplayed().performClick()
+         assertEquals(1, opened)
+         val statusBounds = compose.onNodeWithText(initial, useUnmergedTree = true).getUnclippedBoundsInRoot()
+-        val pageBounds = compose.onNodeWithText("/").getUnclippedBoundsInRoot()
++        val pageBounds = compose.onNodeWithText("1/57").getUnclippedBoundsInRoot()
+         val root = compose.onRoot().getUnclippedBoundsInRoot()
+         assertTrue(statusBounds.bottom <= pageBounds.top)
+         assertTrue(statusBounds.left > (root.right - root.left) / 2)
+@@ -80,7 +80,7 @@
+                 reader.value = reader.value.copy(settings = reader.value.settings.copy(footerAlignment = alignment))
+             }
+             val bounds = compose.onNodeWithText(initial, useUnmergedTree = true).getUnclippedBoundsInRoot()
+-            val footer = compose.onNodeWithText("/").getUnclippedBoundsInRoot()
++            val footer = compose.onNodeWithText("1/57").getUnclippedBoundsInRoot()
+             assertTrue(bounds.bottom <= footer.top)
+             when (alignment) {
+                 0 -> assertEquals((root.left + 16.dp).value, bounds.left.value, 1f)
+@@ -97,7 +97,7 @@
+             reader.value = reader.value.copy(settings = reader.value.settings.copy(hideFooter = true))
+             translation.value = translation.value.copy(busy = false, error = "failed")
+         }
+-        compose.onNodeWithText("/").assertDoesNotExist()
++        compose.onNodeWithText("1/57").assertDoesNotExist()
+         val failed = app.getString(R.string.feature_manga_translation_footer_failed) + " · " + progress
+         compose.onNodeWithText(failed).assertIsDisplayed().performClick()
+         assertEquals(2, opened)
