@@ -30,6 +30,8 @@
 - versionCode 为 `major*100000000 + minor*1000000 + patch*1000 + revision`；两个产品一致。支持 major 0..20、minor 0..99、patch 0..999、revision 1..999，超出即停止而不是溢出。
 - 补丁、签名身份或构建行为变更后必须提高 `config.json` 的 `patch_revision`，不覆盖旧版。
 
+`0005-upstream-325-verification.patch` 修正上游 `3.26.25` 的验证遗漏：设置映射测试补齐段落评论高度键与非默认值，字段数量改为反射模型数量；纯数字百分比格式标记为不可翻译。保留读写断言和所有检查门禁。
+
 ## 固定签名
 
 GitHub Repository secrets：`IREADER_KEYSTORE_BASE64` 和 `IREADER_KEYSTORE_PASSWORD`。

@@ -1,0 +1,47 @@
+diff --git a/app/src/test/java/io/legado/app/data/repository/ReadSettingsMappingTest.kt b/app/src/test/java/io/legado/app/data/repository/ReadSettingsMappingTest.kt
+index 978d8a4f74e3a9caf2bb5c3d8e080e609fa7a655..a979bd3c009865682dcefe57ff6a739d5b227e3d 100644
+--- a/app/src/test/java/io/legado/app/data/repository/ReadSettingsMappingTest.kt
++++ b/app/src/test/java/io/legado/app/data/repository/ReadSettingsMappingTest.kt
+@@ -34,11 +34,11 @@
+     }
+ 
+     @Test
+-    fun `gateway 持久化映射覆盖 ReadSettings 全部 116 个字段`() {
++    fun `gateway 持久化映射覆盖 ReadSettings 全部字段`() {
+         val actualKeys = ReadSettings().toGatewayPrefMap().keys
+         val expectedKeys = ReadSettings().expectedGatewayPrefMap().keys
+ 
+-        assertEquals(116, actualKeys.size)
++        assertEquals(ReadSettings::class.primaryConstructor!!.parameters.size, actualKeys.size)
+         assertEquals(expectedKeys, actualKeys)
+     }
+ 
+@@ -151,6 +151,7 @@
+         systemTypefaces = 23,
+         paragraphBubblePackage = "sample-bubble",
+         forceSoftwareParagraphBubble = true,
++        paragraphCommentHeightPercent = 70,
+         preDownloadNum = 29,
+         preDownloadNumPrev = 7,
+         menuAlpha = 1001,
+@@ -303,6 +304,7 @@
+     PreferKey.systemTypefaces to systemTypefaces,
+     PreferKey.paragraphBubblePackage to paragraphBubblePackage,
+     PreferKey.forceSoftwareParagraphBubble to forceSoftwareParagraphBubble,
++    PreferKey.paragraphCommentHeightPercent to paragraphCommentHeightPercent,
+     PreferKey.preDownloadNum to preDownloadNum,
+     PreferKey.preDownloadNumPrev to preDownloadNumPrev,
+     PreferKey.prevKeys to prevKeys,
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index b256a6de80a93ecabbaa68ba2a271f9ddae6bd4b..a8114f589958a7b48d56c5de608d684e8ec3f3d3 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -3964,7 +3964,7 @@
+     <string name="bubble_config_entry_summary">Bubble styles used by paragraph comments</string>
+     <string name="paragraph_comment_height">Paragraph comment popup height</string>
+     <string name="paragraph_comment_height_follow_source">Follow book source</string>
+-    <string name="paragraph_comment_height_percent">%1$d%%</string>
++    <string name="paragraph_comment_height_percent" translatable="false">%1$d%%</string>
+     <string name="bubble_config_summary">Paragraph bubbles turn the comment counters in a book source into native SVG bubbles. Tap a style to apply it.</string>
+     <string name="bubble_force_software">Always draw software bubbles</string>
+     <string name="bubble_force_software_desc">Detect comment entries that a book source draws as images and render them with the current bubble style</string>
