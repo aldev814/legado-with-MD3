@@ -42,22 +42,6 @@ index 448c56579f7858890c7a6772dd508960ae33e516..3f78aadf1c24dd2d2ace04061c9d1c9d
      UnderlineHeight,
      UnderlinePadding,
      PaddingTop,
-diff --git a/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt b/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt
-index df7c1e2a00fae3db0882a65c6ae13051229297de..fd457738787dfdd131c37cd11142633db5201720 100644
---- a/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt
-+++ b/app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt
-@@ -123,4 +123,10 @@ data class ReadSettings(
-     val showMenuIcon: Boolean = false,
-     val titleBarCompact: Boolean = false,
-     val moreActionsConfig: String = "",
--)
-+) {
-+    /** The nine-zone click configuration must retain at least one menu entry. */
-+    fun hasMenuClickArea(): Boolean =
-+        clickActionTL * clickActionTC * clickActionTR *
-+            clickActionML * clickActionMC * clickActionMR *
-+            clickActionBL * clickActionBC * clickActionBR == 0
-+}
 diff --git a/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt b/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
 index 22a3cfad34d960ddf2331086670d3e5c24ae6275..c6fcee3da27987123c4de8e995e04a73681e9aa7 100644
 --- a/app/src/main/java/io/legado/app/feature/reader/ReaderCanvasSurface.kt
@@ -329,18 +313,26 @@ index 889793b4b0148dfa91bd1b45906d00cd5c3aaeb7..eabfe46fc869dc717229a2a9880ef7ce
                          onAnimChanged = { onIntent(ReadBookIntent.PageAnimChanged) },
                      )
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
-index 725eaea70749625c533e18466bb6efa3027e1adb..3c43cf1643fe8f065e7b8c340a83086cfe3917e7 100644
+index a511a67a390e19192bbca6ecb8338e588134f371..b822e1821fb4683a568d7b3558f61ca292ad27d9 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
 +++ b/app/src/main/java/io/legado/app/ui/book/read/ReadBookViewModel.kt
-@@ -52,6 +52,7 @@ import io.legado.app.domain.usecase.SyncReadAloudVoicesUseCase
- import io.legado.app.domain.usecase.UploadReadingProgressUseCase
- import io.legado.app.domain.usecase.VerifyBookmarkTargetUseCase
+@@ -40,6 +40,7 @@
+ import io.legado.app.domain.gateway.ThemeSettingsGateway
+ import io.legado.app.domain.model.readaloud.ReadAloudSessionStatus
+ import io.legado.app.domain.model.settings.ReadAloudTimerMode
++import io.legado.app.domain.model.settings.hasMenuClickArea
+ import io.legado.app.domain.usecase.AiTextFactoryUseCase
+ import io.legado.app.domain.usecase.ChangeBookSourceUseCase
+ import io.legado.app.domain.usecase.CleanSelectedTextUseCase
+@@ -54,6 +55,7 @@
  import io.legado.app.exception.NoStackTraceException
-+import io.legado.app.feature.reader.platform.SmartOsPageTurnEffect
  import io.legado.app.feature.reader.core.navigation.ReaderChapterPagePosition
  import io.legado.app.feature.reader.core.navigation.ReaderPageContext
++import io.legado.app.feature.reader.model.withWaterRipple
  import io.legado.app.help.book.BookHelp
-@@ -1614,6 +1615,7 @@ class ReadBookViewModel(
+ import io.legado.app.help.book.ContentProcessor
+ import io.legado.app.help.book.isEpub
+@@ -1617,6 +1619,7 @@
              }
  
              is ReadBookIntent.PageAnimChanged -> {
@@ -348,7 +340,7 @@ index 725eaea70749625c533e18466bb6efa3027e1adb..3c43cf1643fe8f065e7b8c340a83086c
                  _effects.tryEmit(ReadBookEffect.PageAnimChanged)
              }
  
-@@ -1935,12 +1937,6 @@ class ReadBookViewModel(
+@@ -1938,12 +1941,6 @@
          }
      }
  
@@ -361,21 +353,15 @@ index 725eaea70749625c533e18466bb6efa3027e1adb..3c43cf1643fe8f065e7b8c340a83086c
      // --- State Sync ---
  
      private fun buildStyleConfig(): ReadBookStyleConfig {
-@@ -1967,9 +1963,13 @@ class ReadBookViewModel(
-             textColorEInk = dur.getTextColorEInk(),
-             textFont = config.textFont,
-             titleFont = config.titleFont,
--            pageAnim = actualConfig.getPageAnim(),
-+            pageAnim = actualConfig.curPageAnim(),
-             pageAnimEInk = actualConfig.getPageAnimEInk(),
-             pageAnimSpeed = actualConfig.getPageAnimSpeed(),
-+            waterRippleSpeed = actualConfig.getWaterRippleSpeed(),
-+            waterRippleSupported = SmartOsPageTurnEffect.isSupported,
-+            bookPageAnim = ReadBook.book?.config?.pageAnim?.takeIf { it >= 0 } ?: -1,
-+            effectivePageAnim = ReadBook.pageAnim(),
-             shareLayout = config.shareLayout,
-             gridColumns = readSettingsRepository.currentSettings.themeGridColumns,
-             menuBgColorDay = dur.menuBgColor(isNight = false),
+@@ -1981,7 +1978,7 @@
+             menuAccentColorNight = dur.menuAccentColor(isNight = true),
+             configCount = styleState.items.size,
+             styleItems = styleState.items.toImmutableList(),
+-        )
++        ).withWaterRipple(actualConfig, ReadBook.book?.config?.pageAnim, ReadBook.pageAnim())
+     }
+ 
+     private fun buildSheetConfig(): ReadSheetConfigUiState = ReadSheetConfigUiState(
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt b/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt
 index 9b6726812df3949a94b9f040158202a8b418261f..76b3245301be82419aa21c0be0fcdc02a5258076 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/ReadConfigUpdateDelegate.kt
@@ -838,21 +824,21 @@ index b17f623789734fad0776ee196d9cff33844ba022..dac261c18498a84be4bce13e11ceb794
      }
  }
 diff --git a/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt b/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt
-index bb4b0dc273fef500c019fb1ed206917f562725c1..f20444fc913a96a31e3f5bd894b1547f7d744c16 100644
+index bb4b0dc273fef500c019fb1ed206917f562725c1..9d1082d9101cf1017368315a1231caae4af8cb2c 100644
 --- a/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt
 +++ b/app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt
-@@ -117,7 +117,9 @@ class ReadBookDomainSplitBoundaryTest {
+@@ -117,7 +117,9 @@
       * 行数只作粗棘轮：散落在 VM 的域内状态比总行数更能说明边界是否干净，各域另受
       * `域状态不回流进 ReadBookViewModel` 守卫约束。
       *
 -     * 当前上限 2772：由 2763 放宽 9 行，全部是新增「离线缓存」域的接线，实现已摘进
 +     * 当前上限 2772：硬件翻页会话移入既有 ReaderSessionViewModel，菜单点击区域规则
-+     * 移入 ReadSettings，宿主保留设置快照与意图编排；没有放宽行数门禁。
++     * 使用独立扩展与样式装饰函数，宿主保留快照编排；没有放宽行数门禁。
 +     * 回溯（上一档 2772）：由 2763 放宽 9 行，全部是新增「离线缓存」域的接线，实现已摘进
       * `ReadBookCacheDelegate`（章节筛选、范围预览的 IO 与文案都在里面），VM 只剩：
       * 两个意图分支转发（相对上一档净增 0）、`cacheDelegate` 的 lazy 装配（+7）与
       * 预览投影进 `_uiState`（+1，`_uiState` 只有 VM 能碰）、一条域注释与空行（+2）。
-@@ -329,6 +331,12 @@ class ReadBookDomainSplitBoundaryTest {
+@@ -329,6 +331,12 @@
  
      private companion object {
          val DOMAINS = listOf(
@@ -1177,5 +1163,110 @@ new file mode 100644
 +        assertEquals(1, supported.count { it.value == 9 })
 +        assertEquals(-1, readerPageAnimationOptions(true, true).first().value)
 +        assertEquals(ordinary.size + 1, readerPageAnimationOptions(false, true).size)
++    }
++}
+diff --git a/app/src/test/java/io/legado/app/ui/book/read/ReaderConfigSnapshotInvariantTest.kt b/app/src/test/java/io/legado/app/ui/book/read/ReaderConfigSnapshotInvariantTest.kt
+index 1f7693ff7ba3142fa2204b5f8e6f460a46eb3e72..cde564ebcb14cb6a333bf079fa7957acdae3758a 100644
+--- a/app/src/test/java/io/legado/app/ui/book/read/ReaderConfigSnapshotInvariantTest.kt
++++ b/app/src/test/java/io/legado/app/ui/book/read/ReaderConfigSnapshotInvariantTest.kt
+@@ -37,7 +37,15 @@
+ 
+     private fun assertAllFieldsAssigned(stateType: KClass<*>, functionSignature: String) {
+         val body = viewModelSource().functionBodyAfter(functionSignature)
+-        val assigned = NAMED_ARGUMENT.findAll(body).map { it.groupValues[1] }.toSet()
++        val assigned = NAMED_ARGUMENT.findAll(body).map { it.groupValues[1] }.toMutableSet()
++        if (stateType == ReadBookStyleConfig::class) {
++            assertTrue("Style decorator must remain connected to the snapshot builder", viewModelSource().contains(
++                ").withWaterRipple(actualConfig, ReadBook.book?.config?.pageAnim, ReadBook.pageAnim())"
++            ))
++            val decorator = mainSourceFile("io/legado/app/feature/reader/model/ReaderWaterRippleStyle.kt")
++                .readText().functionBodyAfter("): ReadBookStyleConfig =")
++            assigned += NAMED_ARGUMENT.findAll(decorator).map { it.groupValues[1] }
++        }
+         val missing = stateType.primaryConstructor
+             ?.parameters
+             ?.mapNotNull { it.name }
+diff --git a/app/src/main/java/io/legado/app/domain/model/settings/ReadSettingsMenuExtensions.kt b/app/src/main/java/io/legado/app/domain/model/settings/ReadSettingsMenuExtensions.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/io/legado/app/domain/model/settings/ReadSettingsMenuExtensions.kt
+@@ -0,0 +1,7 @@
++package io.legado.app.domain.model.settings
++
++/** The nine-zone click configuration must retain at least one menu entry. */
++internal fun ReadSettings.hasMenuClickArea(): Boolean =
++    clickActionTL * clickActionTC * clickActionTR *
++        clickActionML * clickActionMC * clickActionMR *
++        clickActionBL * clickActionBC * clickActionBR == 0
+diff --git a/app/src/main/java/io/legado/app/feature/reader/model/ReaderWaterRippleStyle.kt b/app/src/main/java/io/legado/app/feature/reader/model/ReaderWaterRippleStyle.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/io/legado/app/feature/reader/model/ReaderWaterRippleStyle.kt
+@@ -0,0 +1,21 @@
++package io.legado.app.feature.reader.model
++
++import io.legado.app.feature.reader.platform.SmartOsPageTurnEffect
++import io.legado.app.help.config.ReadBookConfig
++import io.legado.app.help.config.ReadStyleResolver
++import io.legado.app.ui.book.read.ReadBookStyleConfig
++
++/** Decorate the existing reader snapshot without changing unrelated style fields. */
++internal fun ReadBookStyleConfig.withWaterRipple(
++    config: ReadBookConfig.Config,
++    bookPageAnim: Int?,
++    effectivePageAnim: Int,
++    mode: ReadStyleResolver.ReadStyleMode = ReadStyleResolver.currentMode(),
++    supported: Boolean = SmartOsPageTurnEffect.isSupported,
++): ReadBookStyleConfig = copy(
++    pageAnim = if (mode == ReadStyleResolver.ReadStyleMode.EInk) config.getPageAnimEInk() else config.getPageAnim(),
++    waterRippleSpeed = config.getWaterRippleSpeed(),
++    waterRippleSupported = supported,
++    bookPageAnim = bookPageAnim?.takeIf { it >= 0 } ?: -1,
++    effectivePageAnim = effectivePageAnim,
++)
+diff --git a/app/src/test/java/io/legado/app/feature/reader/model/ReaderWaterRippleStyleTest.kt b/app/src/test/java/io/legado/app/feature/reader/model/ReaderWaterRippleStyleTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/io/legado/app/feature/reader/model/ReaderWaterRippleStyleTest.kt
+@@ -0,0 +1,41 @@
++package io.legado.app.feature.reader.model
++
++import io.legado.app.help.config.ReadBookConfig
++import io.legado.app.help.config.ReadStyleResolver.ReadStyleMode
++import io.legado.app.ui.book.read.ReadBookStyleConfig
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Test
++
++class ReaderWaterRippleStyleTest {
++    @Test fun unsupportedDeviceRetainsStoredModeAndUnrelatedStyleFields() {
++        val base = ReadBookStyleConfig(styleName = "kept", textSize = 31, pageAnimSpeed = 3)
++        val config = ReadBookConfig.Config(pageAnim = 9, waterRippleSpeed = 2)
++        val actual = base.withWaterRipple(config, null, 0, ReadStyleMode.Day, false)
++        assertEquals(base.copy(pageAnim = 9, waterRippleSpeed = 2), actual)
++        assertFalse(actual.waterRippleSupported)
++        assertEquals(0, actual.effectivePageAnim)
++    }
++
++    @Test fun dayNightAndEInkUseTheirOwnStoredAnimation() {
++        val config = ReadBookConfig.Config(pageAnim = 2, pageAnimEInk = 9, waterRippleSpeed = 0)
++        for (mode in ReadStyleMode.entries) {
++            val actual = ReadBookStyleConfig().withWaterRipple(config, 9, 9, mode, true)
++            assertEquals(if (mode == ReadStyleMode.EInk) 9 else 2, actual.pageAnim)
++            assertEquals(0, actual.waterRippleSpeed)
++            assertEquals(9, actual.bookPageAnim)
++            assertEquals(9, actual.effectivePageAnim)
++        }
++    }
++
++    @Test fun defaultBookOverrideAndInvalidSpeedAreNormalizedIndependently() {
++        val config = ReadBookConfig.Config(waterRippleSpeed = 99, pageAnimSpeed = 3)
++        for (override in listOf(null, -1, -7, 0, 9)) {
++            val base = ReadBookStyleConfig(pageAnimSpeed = 3)
++            val actual = base.withWaterRipple(config, override, 2, ReadStyleMode.Day, true)
++            assertEquals(override?.takeIf { it >= 0 } ?: -1, actual.bookPageAnim)
++            assertEquals(1, actual.waterRippleSpeed)
++            assertEquals(3, actual.pageAnimSpeed)
++        }
 +    }
 +}

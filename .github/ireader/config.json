@@ -1,7 +1,7 @@
 {
   "upstream": "HapeLee/legado-with-MD3",
   "fork": "aldev814/legado-with-MD3",
-  "patch_revision": 2,
+  "patch_revision": 3,
   "application_id": "io.legato.kazusa.ireader",
   "certificate_sha256": "326b8b72048a9507eef32b032fedceefb68fd89c6e4174dcd41436320a0929ad"
 }
