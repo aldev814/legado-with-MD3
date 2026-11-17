@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="page_anim_water_ripple">掌阅水波纹</string>
+    <string name="water_ripple_speed">水波纹速度</string>
+    <string name="water_ripple_fast">快</string>
+    <string name="water_ripple_standard">标准</string>
+    <string name="water_ripple_slow">慢</string>
+</resources>

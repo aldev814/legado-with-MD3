@@ -1,0 +1,69 @@
+package io.legado.app.feature.reader
+
+import android.graphics.Paint
+import androidx.compose.runtime.mutableIntStateOf
+import io.legado.app.feature.reader.core.model.ReaderElement
+import io.legado.app.feature.reader.core.model.ReaderPage
+import io.legado.app.feature.reader.core.model.ReaderTextStyle
+import io.legado.app.feature.reader.core.model.textBackgroundRuns
+import io.legado.app.feature.reader.core.style.ReaderBackgroundBand
+import io.legado.app.feature.reader.core.style.mergeBackgroundBounds
+import io.legado.app.feature.reader.platform.ReaderAndroidPaintFactory
+import io.legado.app.feature.reader.platform.ReaderPageDecorationDrawCache
+
+/**
+ * 滚动模式单画布的每页绘制数据（对照 shutiao 的 page.textLayoutCache）。
+ *
+ * 普通类、组合外构建：窗口发布后由 effect 期预热，draw 期直读；位图类字段用
+ * snapshot state 承载，加载完成只触发重绘不重组。
+ */
+internal class ScrollPageDrawData(val page: ReaderPage) {
+    val textElements: List<ReaderElement.Text> = page.elements.filterIsInstance<ReaderElement.Text>()
+    val paints: Map<ReaderTextStyle, Paint> =
+        textElements.map { it.style }.distinct().associateWith(ReaderAndroidPaintFactory::create)
+    val textBackgrounds = page.textBackgroundRuns()
+    val textBackgroundBands: List<ReaderBackgroundBand> = textElements.mergeBackgroundBounds()
+    // 背景图不许开抗锯齿：九宫格相邻两格各画一条半覆盖的边会合成出一条透底的切割线。
+    val textBackgroundPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    val decorationDrawCache = ReaderPageDecorationDrawCache.create(page)
+    /** 通过真实字体 advance 校验的合并正文；命中、朗读状态变化时复用。 */
+    val textDrawRuns: Map<ReaderElement.Text, ReaderTextDrawRun> =
+        buildMergedTextRuns(page.elements, paints)
+    /** 整段绘制时临时承载字距的画笔，避免改动 [paints] 里共用的画笔。 */
+    val mergedRunPaint = Paint()
+
+    /** Text-background bitmaps are owned by ReaderTextBackgroundLoader's byte-bounded LRU. */
+    val textBackgroundRevision = mutableIntStateOf(0)
+}
+
+/**
+ * 页 → 绘制数据缓存。key 取 elements 的**引用身份**：跨页换窗、分钟级页眉时间刷新
+ * 都会生成新页实例但复用同一 elements 列表，缓存持续命中；只有真重排（新列表）才
+ * 重建。超容量按 LRU 淘汰。
+ */
+internal class ScrollPageDrawCache(capacity: Int = 8) {
+    private val entries = object : LinkedHashMap<ReaderPageElementsKey, ScrollPageDrawData>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ReaderPageElementsKey, ScrollPageDrawData>): Boolean =
+            size > capacity
+    }
+
+    fun put(page: ReaderPage, data: ScrollPageDrawData) {
+        synchronized(this) { entries[ReaderPageElementsKey(page.elements)] = data }
+    }
+
+    fun peek(page: ReaderPage): ScrollPageDrawData? = synchronized(this) {
+        entries[ReaderPageElementsKey(page.elements)]
+    }
+
+    /** draw 期兜底：miss 时主线程同步构建，保正确性不缺字；正常路径由预热先行。 */
+    fun ensure(page: ReaderPage): ScrollPageDrawData =
+        peek(page) ?: ScrollPageDrawData(page).also { put(page, it) }
+}
+
+/** 按不可变排版元素列表的引用区分页内容，无须逐字计算缓存键。 */
+internal class ReaderPageElementsKey(private val elements: List<ReaderElement>) {
+    override fun equals(other: Any?): Boolean =
+        other is ReaderPageElementsKey && elements === other.elements
+
+    override fun hashCode(): Int = System.identityHashCode(elements)
+}

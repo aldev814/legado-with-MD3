@@ -1,0 +1,595 @@
+package io.legado.app.ui.book.read.sheet
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Toc
+import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CleanHands
+import androidx.compose.material.icons.filled.Comment
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.DisplaySettings
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.FindReplace
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Payment
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import io.legado.app.R
+import io.legado.app.constant.PageAnim
+import io.legado.app.feature.reader.components.WaterRipplePageAnimationMenu
+import io.legado.app.feature.reader.model.readerVisiblePageAnimation
+import io.legado.app.ui.book.read.ReadBookStyleConfig
+import io.legado.app.ui.book.read.ConfigUpdate
+import io.legado.app.data.entities.Book
+import io.legado.app.model.ReadBook
+import io.legado.app.ui.book.read.MoreActionIds
+import io.legado.app.ui.book.read.ReadBookButtonConfigItem
+import io.legado.app.ui.book.read.ReadBookIntent
+import io.legado.app.ui.book.read.ReadBookMenuRoute
+import io.legado.app.ui.book.read.ReadBookSheet
+import io.legado.app.ui.book.read.ReadBookUiState
+import io.legado.app.ui.book.read.isReadMenuActionApplicable
+import io.legado.app.ui.book.read.readMenuActionScopeLabelRes
+import io.legado.app.ui.theme.ComposeEngine
+import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.widget.components.ConfigListEntry
+import io.legado.app.ui.widget.components.ReorderableConfigList
+import io.legado.app.ui.widget.components.menu.AppAction
+import io.legado.app.ui.widget.components.menu.AppActionGroup
+import io.legado.app.ui.widget.components.menu.AppActionMenu
+import io.legado.app.ui.widget.components.modalBottomSheet.AppModalBottomSheet
+import io.legado.app.ui.widget.components.reader.ReaderMenuActionSquare
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
+
+private data class MoreActionSpec(
+    val id: String,
+    val label: String,
+    val icon: ImageVector,
+    val applicable: Boolean = true,
+    val selected: Boolean = false,
+    val onClick: () -> Unit,
+)
+
+@Composable
+fun ReaderMoreActionsSheet(
+    show: Boolean,
+    state: ReadBookUiState,
+    onIntent: (ReadBookIntent) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    var editing by remember(show) { mutableStateOf(false) }
+    fun dispatch(intent: ReadBookIntent) {
+        onDismissRequest()
+        onIntent(intent)
+    }
+
+    val specs = moreActionSpecs(state, onIntent, ::dispatch)
+    val config = state.menuConfig.moreActionItems.ifEmpty {
+        MoreActionIds.map { ReadBookButtonConfigItem(it, true) }
+    }
+
+    AppModalBottomSheet(
+        show = show,
+        onDismissRequest = onDismissRequest,
+        contentPaddingEnabled = false,
+    ) {
+        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+            ReaderBookHeader(book = state.book)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        if (editing) {
+            MoreActionsConfigContent(
+                items = config,
+                specs = specs,
+                onCancel = { editing = false },
+                onSave = {
+                    onIntent(ReadBookIntent.SaveMoreActionsConfig(it))
+                    editing = false
+                },
+            )
+        } else {
+            MoreActionsPager(
+                actions = orderedVisibleActions(config, specs) + MoreActionSpec(
+                    id = "configure_more_actions",
+                    label = stringResource(R.string.more_actions_config),
+                    icon = Icons.Default.Settings,
+                    onClick = { editing = true },
+                ),
+                state = state,
+                onIntent = onIntent,
+                dispatch = ::dispatch,
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+private fun orderedVisibleActions(
+    config: List<ReadBookButtonConfigItem>,
+    specs: List<MoreActionSpec>,
+): List<MoreActionSpec> {
+    val specMap = specs.associateBy { it.id }
+    return config.mapNotNull { item ->
+        specMap[item.id]?.takeIf { item.enabled && it.applicable }
+    }
+}
+
+@Composable
+private fun MoreActionsPager(
+    actions: List<MoreActionSpec>,
+    state: ReadBookUiState,
+    onIntent: (ReadBookIntent) -> Unit,
+    dispatch: (ReadBookIntent) -> Unit,
+) {
+    val pages = actions.chunked(8).ifEmpty { listOf(emptyList()) }
+    val pagerState = rememberPagerState { pages.size }
+    val scrollModifier = if (LegadoTheme.composeEngine == ComposeEngine.Mochi) {
+        Modifier.verticalScroll(rememberScrollState())
+    } else {
+        Modifier
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().then(scrollModifier)) {
+        val itemSize = (maxWidth - 56.dp) / 4
+        val rowCount = if (actions.size > 4) 2 else 1
+        HorizontalPager(
+            state = pagerState,
+            // 页数很少，手势频繁停在边界；保留平台 stretch 过冲会在松手后反向回弹。
+            overscrollEffect = null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(
+                    itemSize * rowCount + if (rowCount == 2) 24.dp else 16.dp
+                ),
+        ) { page ->
+            val pageItems = pages[page]
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                pageItems.chunked(4).forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowItems.forEach { action ->
+                            ActionSquareHost(
+                                action = action,
+                                state = state,
+                                onIntent = onIntent,
+                                dispatch = dispatch,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionSquareHost(
+    action: MoreActionSpec,
+    state: ReadBookUiState,
+    onIntent: (ReadBookIntent) -> Unit,
+    dispatch: (ReadBookIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember(action.id) { mutableStateOf(false) }
+    val hasMore = action.id == "change_source" || action.id == "refresh" ||
+            action.id == "source_custom_button"
+    Box(modifier = modifier) {
+        ReaderMenuActionSquare(
+            icon = action.icon,
+            text = action.label,
+            selected = action.selected,
+            hasMore = hasMore,
+            onClick = if (action.id == "image_style" || action.id == "page_anim") {
+                { expanded = true }
+            } else {
+                action.onClick
+            },
+            onMoreClick = { expanded = true },
+        )
+        when (action.id) {
+            "source_custom_button" -> AppActionMenu(
+                groups = persistentListOf(
+                    AppActionGroup(
+                        id = ReaderMoreSourceCustomGroup,
+                        actions = persistentListOf(
+                            AppAction(
+                                id = ReaderMoreSourceCustomLong,
+                                label = stringResource(R.string.source_custom_button_long_action),
+                            ),
+                        ),
+                    ),
+                ),
+                onAction = { dispatch(ReadBookIntent.SourceCustomButton(true)) },
+                modifier = Modifier.matchParentSize(),
+                embeddedExpanded = expanded,
+                onDismissRequest = { expanded = false },
+                trigger = {},
+            )
+
+            "change_source" -> AppActionMenu(
+                groups = persistentListOf(
+                    AppActionGroup(
+                        id = ReaderMoreChangeSourceGroup,
+                        actions = persistentListOf(
+                            AppAction(
+                                id = ReaderMoreChangeBookSource,
+                                label = stringResource(R.string.change_origin),
+                            ),
+                            AppAction(
+                                id = ReaderMoreChangeChapterSource,
+                                label = stringResource(R.string.chapter_change_source),
+                            ),
+                        ),
+                    ),
+                ),
+                onAction = { id ->
+                    when (id) {
+                        ReaderMoreChangeBookSource -> dispatch(ReadBookIntent.MenuBookChangeSource)
+                        ReaderMoreChangeChapterSource ->
+                            dispatch(ReadBookIntent.MenuChapterChangeSource)
+                    }
+                },
+                modifier = Modifier.matchParentSize(),
+                embeddedExpanded = expanded,
+                onDismissRequest = { expanded = false },
+                trigger = {},
+            )
+
+            "refresh" -> AppActionMenu(
+                groups = persistentListOf(
+                    AppActionGroup(
+                        id = ReaderMoreRefreshGroup,
+                        actions = persistentListOf(
+                            AppAction(
+                                id = ReaderMoreRefreshDur,
+                                label = stringResource(R.string.menu_refresh_dur),
+                            ),
+                            AppAction(
+                                id = ReaderMoreRefreshAfter,
+                                label = stringResource(R.string.menu_refresh_after),
+                            ),
+                            AppAction(
+                                id = ReaderMoreRefreshAll,
+                                label = stringResource(R.string.menu_refresh_all),
+                            ),
+                        ),
+                    ),
+                ),
+                onAction = { id ->
+                    when (id) {
+                        ReaderMoreRefreshDur -> dispatch(ReadBookIntent.MenuRefreshDur)
+                        ReaderMoreRefreshAfter -> dispatch(ReadBookIntent.MenuRefreshAfter)
+                        ReaderMoreRefreshAll -> dispatch(ReadBookIntent.MenuRefreshAll)
+                    }
+                },
+                modifier = Modifier.matchParentSize(),
+                embeddedExpanded = expanded,
+                onDismissRequest = { expanded = false },
+                trigger = {},
+            )
+
+            "image_style" -> ImageStyleDropdown(
+                expanded = expanded,
+                currentStyle = state.book?.getImageStyle() ?: Book.imgStyleDefault,
+                modifier = Modifier.matchParentSize(),
+                onDismissRequest = { expanded = false },
+                onIntent = onIntent,
+            )
+
+            "page_anim" -> PageAnimDropdown(
+                expanded = expanded,
+                currentPageAnim = readerVisiblePageAnimation(state.styleConfig.bookPageAnim, state.styleConfig.waterRippleSupported),
+                waterRippleStyle = state.styleConfig,
+                modifier = Modifier.matchParentSize(),
+                onDismissRequest = { expanded = false },
+                onIntent = onIntent,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoreActionsConfigContent(
+    items: List<ReadBookButtonConfigItem>,
+    specs: List<MoreActionSpec>,
+    onCancel: () -> Unit,
+    onSave: (List<ReadBookButtonConfigItem>) -> Unit,
+) {
+    val context = LocalContext.current
+    val meta = specs.associateBy { it.id }
+    val entries = items.mapNotNull { item ->
+        meta[item.id]?.let { spec ->
+            ConfigListEntry(
+                id = item.id,
+                enabled = item.enabled,
+                icon = spec.icon,
+                label = spec.label,
+                subtitle = readMenuActionScopeLabelRes(item.id)?.let(context::getString),
+            )
+        }
+    }
+
+    ReorderableConfigList(
+        initialEntries = entries,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        onDismiss = onCancel,
+        onConfirm = { confirmed ->
+            onSave(confirmed.map { ReadBookButtonConfigItem(it.id, it.enabled) })
+        },
+    )
+}
+
+@Composable
+private fun moreActionSpecs(
+    state: ReadBookUiState,
+    onIntent: (ReadBookIntent) -> Unit,
+    dispatch: (ReadBookIntent) -> Unit,
+): List<MoreActionSpec> = listOf(
+    // 换源/刷新/下载/目录规则/编码这类的适用条件统一走按钮注册表，
+    // 免得同一本书在这里能看见、在底栏却被过滤掉（反之亦然）。
+    MoreActionSpec(
+        "source_custom_button", stringResource(R.string.custom_button), Icons.Default.Extension,
+        applicable = isReadMenuActionApplicable("source_custom_button", state),
+        onClick = { dispatch(ReadBookIntent.SourceCustomButton(false)) },
+    ),
+    // 书源四项：顶栏那行在开胶囊或「精简顶部按钮」时不可达，这里作为兜底入口
+    MoreActionSpec(
+        "source_login", stringResource(R.string.login), Icons.AutoMirrored.Filled.Login,
+        applicable = isReadMenuActionApplicable("source_login", state),
+        onClick = { dispatch(ReadBookIntent.ShowLogin) },
+    ),
+    MoreActionSpec(
+        "source_pay", stringResource(R.string.chapter_pay), Icons.Default.Payment,
+        applicable = isReadMenuActionApplicable("source_pay", state),
+        onClick = { dispatch(ReadBookIntent.PayAction) },
+    ),
+    MoreActionSpec(
+        "edit_source", stringResource(R.string.edit_source), Icons.Default.Edit,
+        applicable = isReadMenuActionApplicable("edit_source", state),
+        onClick = { dispatch(ReadBookIntent.OpenSourceEdit) },
+    ),
+    MoreActionSpec(
+        "disable_source", stringResource(R.string.disable_source), Icons.Default.Block,
+        applicable = isReadMenuActionApplicable("disable_source", state),
+        onClick = { dispatch(ReadBookIntent.DisableSource) },
+    ),
+    MoreActionSpec(
+        "change_source", stringResource(R.string.change_origin), Icons.Default.SwapHoriz,
+        applicable = isReadMenuActionApplicable("change_source", state),
+        onClick = { dispatch(ReadBookIntent.MenuChangeSource) }),
+    MoreActionSpec(
+        "refresh", stringResource(R.string.menu_refresh), Icons.Default.Refresh,
+        applicable = isReadMenuActionApplicable("refresh", state),
+        onClick = { dispatch(ReadBookIntent.MenuRefreshDur) }),
+    MoreActionSpec(
+        "download", stringResource(R.string.offline_cache), Icons.Default.CloudDownload,
+        applicable = isReadMenuActionApplicable("download", state),
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.Download)) }),
+    MoreActionSpec(
+        "audio_download",
+        stringResource(R.string.read_aloud_audio_download_entry), Icons.Default.Download,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.AudioDownload)) }),
+    MoreActionSpec(
+        "toc_rule", stringResource(R.string.txt_toc_rule), Icons.AutoMirrored.Filled.Toc,
+        applicable = isReadMenuActionApplicable("toc_rule", state),
+        onClick = { dispatch(ReadBookIntent.MenuTocRegex) }),
+    MoreActionSpec(
+        "charset", stringResource(R.string.set_charset), Icons.Default.Translate,
+        applicable = isReadMenuActionApplicable("charset", state),
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.Charset)) }),
+    MoreActionSpec(
+        "ai_chat", stringResource(R.string.ai_chat), Icons.AutoMirrored.Filled.Chat,
+        onClick = { dispatch(ReadBookIntent.OpenAiChat) }),
+    MoreActionSpec(
+        "edit_content", stringResource(R.string.edit_content), Icons.Default.Edit,
+        onClick = { dispatch(ReadBookIntent.OpenContentEdit) }),
+    MoreActionSpec(
+        "add_bookmark", stringResource(R.string.bookmark_add), Icons.Default.Bookmark,
+        onClick = { dispatch(ReadBookIntent.AddBookmark) }),
+    MoreActionSpec(
+        "text_processing", stringResource(R.string.text_processing), Icons.Default.FindReplace,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.TextProcessing)) }),
+    MoreActionSpec(
+        "highlight_rule", stringResource(R.string.highlight_rule_config), Icons.Default.Tune,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.HighlightRuleConfig)) }),
+    MoreActionSpec(
+        "read_style", stringResource(R.string.read_config), Icons.Default.DisplaySettings,
+        onClick = { dispatch(ReadBookIntent.OpenReadMenuRoute(ReadBookMenuRoute.ReadStyle)) }),
+    MoreActionSpec(
+        "reverse_content", stringResource(R.string.reverse_content), Icons.Default.SwapVert,
+        onClick = { dispatch(ReadBookIntent.MenuReverseContent) }),
+    MoreActionSpec(
+        "re_segment", stringResource(R.string.re_segment), Icons.AutoMirrored.Filled.Toc,
+        selected = state.reSegment, onClick = { onIntent(ReadBookIntent.MenuReSegment) }),
+    MoreActionSpec(
+        "del_ruby", stringResource(R.string.del_ruby_tag), Icons.Default.CleanHands,
+        applicable = state.isEpub, selected = state.delRubyTag,
+        onClick = { onIntent(ReadBookIntent.MenuDelRubyTag) }),
+    MoreActionSpec(
+        "del_h", stringResource(R.string.del_h_tag), Icons.Default.CleanHands,
+        applicable = state.isEpub, selected = state.delHTag,
+        onClick = { onIntent(ReadBookIntent.MenuDelHTag) }),
+    MoreActionSpec(
+        "image_style", stringResource(R.string.image_style), Icons.Default.Image,
+        onClick = {}),
+    MoreActionSpec(
+        "page_anim", stringResource(R.string.book_page_anim), Icons.Default.Animation,
+        onClick = {}),
+    MoreActionSpec(
+        "simulated_reading", stringResource(R.string.simulated_reading), Icons.Default.AutoStories,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.SimulatedReading)) }),
+    MoreActionSpec(
+        "get_progress", stringResource(R.string.get_book_progress), Icons.Default.Sync,
+        applicable = state.inBookshelf && state.isReadingProgressSyncConfigured,
+        onClick = { dispatch(ReadBookIntent.MenuGetProgress) }),
+    MoreActionSpec(
+        "cover_progress", stringResource(R.string.cover_book_progress), Icons.Default.Sync,
+        applicable = state.inBookshelf && state.isReadingProgressSyncConfigured,
+        onClick = { dispatch(ReadBookIntent.MenuCoverProgress) }),
+    MoreActionSpec(
+        "bubble_style", stringResource(R.string.bubble_config), Icons.Default.Comment,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.BubbleStyle)) }),
+    MoreActionSpec(
+        "bottom_button_config", stringResource(R.string.config_btn), Icons.Default.Settings,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.ToolButtonConfig)) }),
+    MoreActionSpec(
+        "log", stringResource(R.string.log), Icons.Default.BugReport,
+        onClick = { onIntent(ReadBookIntent.ShowSheet(ReadBookSheet.AppLog)) }),
+)
+
+// 动作格菜单的稳定 ID：文案与顺序可变，ID 只由语义决定。
+private const val ReaderMoreSourceCustomGroup = "reader_more_source_custom"
+private const val ReaderMoreSourceCustomLong = "reader_more_source_custom_long"
+private const val ReaderMoreChangeSourceGroup = "reader_more_change_source"
+private const val ReaderMoreChangeBookSource = "reader_more_change_book_source"
+private const val ReaderMoreChangeChapterSource = "reader_more_change_chapter_source"
+private const val ReaderMoreRefreshGroup = "reader_more_refresh"
+private const val ReaderMoreRefreshDur = "reader_more_refresh_dur"
+private const val ReaderMoreRefreshAfter = "reader_more_refresh_after"
+private const val ReaderMoreRefreshAll = "reader_more_refresh_all"
+private const val ReaderMoreImageStyleGroup = "reader_more_image_style"
+private const val ReaderMoreImageStyleIdPrefix = "reader_more_image_style:"
+private const val ReaderMorePageAnimGroup = "reader_more_page_anim"
+private const val ReaderMorePageAnimIdPrefix = "reader_more_page_anim:"
+
+@Composable
+private fun ImageStyleDropdown(
+    expanded: Boolean,
+    currentStyle: String,
+    modifier: Modifier = Modifier,
+    onDismissRequest: () -> Unit,
+    onIntent: (ReadBookIntent) -> Unit,
+) {
+    val options = listOf(
+        R.string.btn_default_s to Book.imgStyleDefault,
+        R.string.image_style_full to Book.imgStyleFull,
+        R.string.image_style_text to Book.imgStyleText,
+        R.string.image_style_single to Book.imgStyleSingle,
+    )
+    AppActionMenu(
+        groups = persistentListOf(
+            AppActionGroup(
+                id = ReaderMoreImageStyleGroup,
+                actions = options.map { (label, style) ->
+                    AppAction(
+                        id = "$ReaderMoreImageStyleIdPrefix$style",
+                        label = stringResource(label),
+                        selected = currentStyle == style,
+                    )
+                }.toImmutableList(),
+            ),
+        ),
+        onAction = { id ->
+            options.firstOrNull { (_, style) -> style == id.removePrefix(ReaderMoreImageStyleIdPrefix) }
+                ?.let { (_, style) -> onIntent(ReadBookIntent.MenuImageStyle(style)) }
+        },
+        modifier = modifier,
+        embeddedExpanded = expanded,
+        onDismissRequest = onDismissRequest,
+        trigger = {},
+    )
+}
+
+@Composable
+private fun PageAnimDropdown(
+    expanded: Boolean,
+    currentPageAnim: Int,
+    waterRippleStyle: ReadBookStyleConfig,
+    modifier: Modifier = Modifier,
+    onDismissRequest: () -> Unit,
+    onIntent: (ReadBookIntent) -> Unit,
+) {
+    if (waterRippleStyle.waterRippleSupported) {
+        WaterRipplePageAnimationMenu(
+            expanded = expanded, style = waterRippleStyle, modifier = modifier,
+            onAnimationChanged = { value ->
+                ReadBook.book?.setPageAnim(value)
+                onIntent(ReadBookIntent.PageAnimChanged)
+            },
+            onSpeedChanged = { onIntent(ReadBookIntent.UpdateConfig(ConfigUpdate.WaterRippleSpeed(it))) },
+            onDismissRequest = onDismissRequest,
+        )
+        return
+    }
+    val pageAnimOptions = listOf(
+        R.string.btn_default_s to -1,
+        R.string.page_anim_cover to PageAnim.coverPageAnim,
+        R.string.page_anim_slide to PageAnim.slidePageAnim,
+        R.string.page_anim_simulation to PageAnim.simulationPageAnim,
+        R.string.page_anim_ios_curl to PageAnim.iosCurlPageAnim,
+        R.string.page_anim_google_curl to PageAnim.googleCurlPageAnim,
+        R.string.page_anim_parallax to PageAnim.parallaxPageAnim,
+        R.string.page_anim_scroll to PageAnim.scrollPageAnim,
+        R.string.page_anim_fade to PageAnim.fadePageAnim,
+        R.string.page_anim_none to PageAnim.noAnim,
+    )
+    AppActionMenu(
+        groups = persistentListOf(
+            AppActionGroup(
+                id = ReaderMorePageAnimGroup,
+                actions = pageAnimOptions.map { (label, value) ->
+                    AppAction(
+                        id = "$ReaderMorePageAnimIdPrefix$value",
+                        label = stringResource(label),
+                        selected = currentPageAnim == value,
+                    )
+                }.toImmutableList(),
+            ),
+        ),
+        onAction = { id ->
+            id.removePrefix(ReaderMorePageAnimIdPrefix).toIntOrNull()
+                ?.takeIf { value -> pageAnimOptions.any { (_, option) -> option == value } }
+                ?.let { value ->
+                    // 先写回书籍再通知页面：顺序与旧菜单一致，页面据此重建渲染器。
+                    ReadBook.book?.setPageAnim(value)
+                    onIntent(ReadBookIntent.PageAnimChanged)
+                }
+        },
+        modifier = modifier,
+        embeddedExpanded = expanded,
+        onDismissRequest = onDismissRequest,
+        trigger = {},
+    )
+}

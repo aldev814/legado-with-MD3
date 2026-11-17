@@ -1,0 +1,302 @@
+package io.legado.app.model
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import android.util.Size
+import androidx.collection.LruCache
+import io.legado.app.R
+import io.legado.app.constant.AppLog.putDebug
+import io.legado.app.constant.AppPattern.dataUriRegex
+import io.legado.app.model.analyzeRule.AnalyzeUrl.Companion.paramPattern
+import io.legado.app.data.entities.Book
+import io.legado.app.data.entities.BookSource
+import io.legado.app.domain.gateway.DownloadCacheSettingsGateway
+import io.legado.app.domain.gateway.OtherSettingsGateway
+import io.legado.app.exception.NoStackTraceException
+import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.isEpub
+import io.legado.app.help.book.isMarkdown
+import io.legado.app.help.book.isMobi
+import io.legado.app.help.book.isPdf
+import io.legado.app.model.localBook.EpubFile
+import io.legado.app.model.localBook.MarkdownFile
+import io.legado.app.model.localBook.MarkdownImageSource
+import io.legado.app.model.localBook.MobiFile
+import io.legado.app.model.localBook.PdfFile
+import io.legado.app.utils.BitmapUtils
+import io.legado.app.utils.isAbsUrl
+import io.legado.app.utils.isDataUrl
+import io.legado.app.utils.FileUtils
+import io.legado.app.utils.SvgUtils
+import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.withContext
+import org.koin.core.context.GlobalContext
+import splitties.init.appCtx
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.math.min
+
+object ImageProvider {
+
+    private val cacheSettingsGateway get() = GlobalContext.get().get<DownloadCacheSettingsGateway>()
+    private val otherSettingsGateway get() = GlobalContext.get().get<OtherSettingsGateway>()
+
+    private val errorBitmap: Bitmap by lazy {
+        BitmapFactory.decodeResource(appCtx.resources, R.drawable.image_loading_error)
+    }
+
+    /** Lets renderers keep the last good frame when a refreshed file cannot be decoded. */
+    fun isErrorBitmap(bitmap: Bitmap): Boolean = bitmap === errorBitmap
+
+    /**
+     * 缓存bitmap LruCache实现
+     * filePath bitmap
+     */
+    private const val M = 1024 * 1024
+    val cacheSize: Int
+        get() {
+            return cacheSettingsGateway.currentSettings.bitmapCacheSize.takeIf { it in 1..<2048 }
+                ?.times(M)
+                ?: (50 * M)
+        }
+
+    val bitmapLruCache = BitmapLruCache()
+
+    class BitmapLruCache : LruCache<String, Bitmap>(cacheSize) {
+
+        private var removeCount = 0
+
+        val count get() = putCount() + createCount() - evictionCount() - removeCount
+
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            return value.byteCount
+        }
+
+        override fun entryRemoved(
+            evicted: Boolean,
+            key: String,
+            oldValue: Bitmap,
+            newValue: Bitmap?
+        ) {
+            if (!evicted) {
+                synchronized(this) {
+                    removeCount++
+                }
+            }
+            // 移除 oldValue.recycle()。
+            // 在 Android 8.0+ 像素内存由 GC 自动管理，手动回收容易导致 Canvas 绘制时崩溃。
+            // 特别是在阅读页返回书架时，DisplayList 可能仍持有 Bitmap 引用。
+        }
+
+    }
+
+    fun put(key: String, bitmap: Bitmap) {
+        ensureLruCacheSize(bitmap)
+        bitmapLruCache.put(key, bitmap)
+    }
+
+    fun get(key: String): Bitmap? {
+        val bitmap = bitmapLruCache[key] ?: return null
+        if (bitmap.isRecycled) {
+            bitmapLruCache.remove(key)
+            return null
+        }
+        return bitmap
+    }
+
+    fun remove(key: String): Bitmap? {
+        return bitmapLruCache.remove(key)
+    }
+
+    private fun getNotRecycled(key: String): Bitmap? {
+        val bitmap = bitmapLruCache[key] ?: return null
+        if (bitmap.isRecycled) {
+            bitmapLruCache.remove(key)
+            return null
+        }
+        return bitmap
+    }
+
+    private fun ensureLruCacheSize(bitmap: Bitmap) {
+        val lruMaxSize = bitmapLruCache.maxSize()
+        val lruSize = bitmapLruCache.size()
+        val byteCount = bitmap.byteCount
+        val size = if (byteCount > lruMaxSize) {
+            min(256 * M, (byteCount * 1.3).toInt())
+        } else if (lruSize + byteCount > lruMaxSize && bitmapLruCache.count < 5) {
+            min(256 * M, (lruSize + byteCount * 1.3).toInt())
+        } else {
+            lruMaxSize
+        }
+        if (size > lruMaxSize) {
+            bitmapLruCache.resize(size)
+        }
+    }
+
+    /**
+     *缓存网络图片和epub图片
+     */
+    suspend fun cacheImage(
+        book: Book,
+        src: String,
+        bookSource: BookSource?
+    ): File {
+        return withContext(IO) {
+            val vFile = BookHelp.getImage(book, src)
+            if (!BookHelp.isImageExist(book, src)) {
+                val inputStream = when {
+                    book.isMarkdown -> {
+                        if (src.isAbsUrl() || src.isDataUrl() ||
+                            src.startsWith(MarkdownImageSource.INLINE_PREFIX, true)
+                        ) {
+                            //网络图/data URI/短占位内嵌图走 BookHelp 的普通资源下载（不按书源规则解析地址）
+                            BookHelp.saveImage(bookSource, book, src)
+                            null
+                        } else {
+                            //相对路径按 markdown 文件所在目录解析；无法定位文件时降级为占位图
+                            MarkdownFile.getImage(book, src)
+                        }
+                    }
+                    book.isEpub -> EpubFile.getImage(book, src)
+                    book.isPdf -> PdfFile.getImage(book, src)
+                    book.isMobi -> MobiFile.getImage(book, src)
+                    else -> {
+                        BookHelp.saveImage(bookSource, book, src)
+                        null
+                    }
+                }
+                inputStream?.use { input ->
+                    val newFile = FileUtils.createFileIfNotExist(vFile.absolutePath)
+                    FileOutputStream(newFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            return@withContext vFile
+        }
+    }
+
+    /** 显式刷新必须绕过 URL 查找复用；每份已更新原图的位图都需要重新解码。 */
+    suspend fun refreshImage(book: Book, src: String, bookSource: BookSource?): Boolean = withContext(IO) {
+        // 段评气泡是现算的位图，没有磁盘副本可刷新；丢掉 LRU 即视为刷新完成
+        if (ParagraphBubbleRenderer.isBubbleSrc(src)) {
+            bitmapLruCache.snapshot().keys
+                .filter { it.startsWith("${src}#") }
+                .forEach { bitmapLruCache.remove(it) }
+            return@withContext true
+        }
+        if (book.isEpub || book.isPdf || book.isMobi || book.isMarkdown) {
+            val file = BookHelp.getImage(book, src)
+            bitmapLruCache.remove(file.absolutePath)
+            file.delete()
+            cacheImage(book, src, bookSource).isFile
+        } else {
+            val refreshed = BookHelp.refreshImageCopies(bookSource, book, src)
+            refreshed.forEach { bitmapLruCache.remove(it.absolutePath) }
+            refreshed.isNotEmpty()
+        }
+    }
+
+    /**
+     * 从 data URI 本身探测内在尺寸，不依赖磁盘缓存。
+     *
+     * 首次分页时图片文件可能尚未落盘（或被并发取消写坏），而书源 SVG 的
+     * `width`/`height`/`viewBox` 就在 src 里；直接探测可避免把错误占位图的
+     * 方形宽高比交给排版（#2522 / #2607）。先剥掉图片选项 `,{"style":"FULL"}`。
+     */
+    fun dataUriImageSize(src: String): Size? {
+        val optionStart = paramPattern.find(src)?.range?.first ?: src.length
+        val encoded = dataUriRegex.find(src.substring(0, optionStart).trim())
+            ?.groupValues?.getOrNull(1)?.takeIf(String::isNotEmpty) ?: return null
+        val bytes = runCatching {
+            Base64.decode(encoded, Base64.DEFAULT)
+        }.getOrNull() ?: return null
+        val op = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, op)
+        if (op.outWidth > 0 && op.outHeight > 0) {
+            return Size(op.outWidth, op.outHeight)
+        }
+        return SvgUtils.getSize(bytes.inputStream())
+            ?.takeIf { it.width > 0 && it.height > 0 }
+    }
+
+    /**
+     *获取图片宽度高度信息；探测失败返回 null，不用错误占位图的尺寸冒充。
+     */
+    suspend fun getImageSize(
+        book: Book,
+        src: String,
+        bookSource: BookSource?
+    ): Size? {
+        // 段评气泡是现算的位图，没有磁盘文件，不能走下载/解码路径
+        if (ParagraphBubbleRenderer.isBubbleSrc(src)) {
+            return ParagraphBubbleRenderer.getSize(src)
+        }
+        val file = cacheImage(book, src, bookSource)
+        val op = BitmapFactory.Options()
+        // inJustDecodeBounds如果设置为true,仅仅返回图片实际的宽和高,宽和高是赋值给opts.outWidth,opts.outHeight;
+        op.inJustDecodeBounds = true
+        BitmapFactory.decodeFile(file.absolutePath, op)
+        if (op.outWidth > 0 && op.outHeight > 0) {
+            return Size(op.outWidth, op.outHeight)
+        }
+        //svg size
+        SvgUtils.getSize(file.absolutePath)
+            ?.takeIf { it.width > 0 && it.height > 0 }
+            ?.let { return it }
+        // 磁盘副本尚不可解码时，data URI 仍能给出真实比例；避免首次分页按 1:1 占位。
+        dataUriImageSize(src)?.let { return it }
+        putDebug("ImageProvider: $src Unsupported image type")
+        return null
+    }
+
+    /**
+     *获取bitmap 使用LruCache缓存
+     */
+    fun getImage(
+        book: Book,
+        src: String,
+        width: Int,
+        height: Int? = null
+    ): Bitmap {
+        //src为空白时 可能被净化替换掉了 或者规则失效
+        if (book.getUseReplaceRule(otherSettingsGateway.currentSettings.replaceEnableDefault) && src.isBlank()) {
+            book.setUseReplaceRule(false)
+            appCtx.toastOnUi(R.string.error_image_url_empty)
+        }
+        if (ParagraphBubbleRenderer.isBubbleSrc(src)) {
+            val bubbleKey = ParagraphBubbleRenderer.cacheKey(src, width, height)
+            getNotRecycled(bubbleKey)?.let { return it }
+            val bubbleBitmap = runCatching {
+                ParagraphBubbleRenderer.render(src, width, height)
+            }.getOrNull() ?: return errorBitmap
+            put(bubbleKey, bubbleBitmap)
+            return bubbleBitmap
+        }
+        val vFile = BookHelp.getImage(book, src)
+        if (!vFile.exists()) return errorBitmap
+        //epub文件提供图片链接是相对链接，同时阅读多个epub文件，缓存命中错误
+        //bitmapLruCache的key同一改成缓存文件的路径
+        val cacheBitmap = getNotRecycled(vFile.absolutePath)
+        if (cacheBitmap != null) return cacheBitmap
+        return kotlin.runCatching {
+            val bitmap = BitmapUtils.decodeBitmap(vFile.absolutePath, width, height)
+                ?: SvgUtils.createBitmap(vFile.absolutePath, width, height)
+                ?: throw NoStackTraceException(appCtx.getString(R.string.error_decode_bitmap))
+            put(vFile.absolutePath, bitmap)
+            bitmap
+        }.onFailure {
+            //错误图片占位,防止重复获取
+            put(vFile.absolutePath, errorBitmap)
+        }.getOrDefault(errorBitmap)
+    }
+
+    suspend fun clear() {
+        withContext(IO) {
+            bitmapLruCache.evictAll()
+        }
+    }
+
+}
