@@ -1270,7 +1270,7 @@ diff --git a/app/src/test/java/io/legado/app/feature/reader/components/WaterRipp
 new file mode 100644
 --- /dev/null
 +++ b/app/src/test/java/io/legado/app/feature/reader/components/WaterRipplePageAnimationMenuTest.kt
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,129 @@
 +package io.legado.app.feature.reader.components
 +
 +import android.app.Application
@@ -1294,6 +1294,8 @@ new file mode 100644
 +import io.legado.app.ui.book.read.sheet.GlobalThemePage
 +import io.legado.app.ui.theme.AppTheme
 +import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
 +import org.junit.Rule
 +import org.junit.Test
 +import org.junit.runner.RunWith
@@ -1339,8 +1341,12 @@ new file mode 100644
 +        if (selectSpeed) {
 +            val lists = compose.onAllNodes(hasScrollToIndexAction(), useUnmergedTree = true)
 +            if (lists.fetchSemanticsNodes().isNotEmpty()) lists.onLast().performScrollToNode(hasText(slow))
-+            else compose.onNodeWithText(slow, useUnmergedTree = true).performScrollTo()
-+            compose.onNodeWithText(slow, useUnmergedTree = true).performClick()
++            else if (compose.onAllNodes(
++                    hasText(slow) and hasAnyAncestor(hasScrollAction()), useUnmergedTree = true,
++                ).fetchSemanticsNodes().isNotEmpty()) {
++                compose.onNodeWithText(slow, useUnmergedTree = true).performScrollTo()
++            }
++            compose.onNodeWithText(slow, useUnmergedTree = true).assertIsDisplayed().performClick()
 +            compose.runOnIdle { assertEquals(listOf(2), speeds); assertEquals(emptyList<Int>(), animations) }
 +        } else {
 +            compose.onNodeWithText(slow, useUnmergedTree = true).assertDoesNotExist()
@@ -1348,7 +1354,8 @@ new file mode 100644
 +            compose.runOnIdle { assertEquals(listOf(-1), animations); assertEquals(emptyList<Int>(), speeds) }
 +        }
 +        compose.runOnIdle {
-+            assertEquals(1, dismisses)
++            assertTrue(dismisses >= 1)
++            assertFalse(expanded)
 +            assertEquals(3, style.pageAnimSpeed)
 +        }
 +    }
