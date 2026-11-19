@@ -87,6 +87,7 @@ jobs:
         with:
           repository: HapeLee/legado-with-MD3
           ref: ${{ needs.detect.outputs.upstream_commit }}
+          submodules: recursive
           fetch-depth: 0
           path: source
           persist-credentials: false
@@ -99,14 +100,18 @@ jobs:
         run: |
           set +o pipefail
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            'platforms;android-37.0' 'platforms;android-37.1' 'build-tools;36.0.0'
+            'platforms;android-36' 'platforms;android-37.0' 'platforms;android-37.1' 'platforms;android-37.2' 'build-tools;36.0.0' 'build-tools;37.0.0'
           set -o pipefail
       - name: Test release automation
         run: python3 -m unittest discover -s control/.github/ireader/tests -v
-      - name: Apply patches and record exact source (stop on any conflict)
+      - name: Apply patches (stop on any conflict)
         run: |
           python3 control/.github/ireader/prepare_source.py source plan/release-plan.json
-          python3 control/.github/ireader/package_source.py source artifacts plan/release-plan.json
+      - name: Prepare pinned upstream UI dependencies
+        working-directory: source
+        run: python3 scripts/prepare-ui-forks.py
+      - name: Record exact source and pinned submodule revisions
+        run: python3 control/.github/ireader/package_source.py source artifacts plan/release-plan.json
       - name: Run unit tests, lint, architecture check and Release/R8 build
         working-directory: source
         env:

@@ -14,12 +14,35 @@ def git(source, *args, **kwargs):
     return subprocess.check_output(['git', *args], cwd=source, text=True, **kwargs).strip()
 
 
+def submodule_commits(source, prefix=""):
+    commits = {}
+    entries = git(source, 'ls-files', '--stage', '-z').split('\0')
+    for entry in entries:
+        if not entry:
+            continue
+        metadata, path = entry.split('\t', 1)
+        mode, expected, stage = metadata.split()
+        if mode != '160000':
+            continue
+        directory = source / path
+        if not (directory / '.git').exists():
+            raise ValueError('Submodule is not initialized: ' + prefix + path)
+        if git(directory, 'rev-parse', 'HEAD') != expected:
+            raise ValueError('Submodule differs from pinned source: ' + prefix + path)
+        if git(directory, 'status', '--porcelain'):
+            raise ValueError('Submodule has local changes: ' + prefix + path)
+        commits[prefix + path] = expected
+        commits.update(submodule_commits(directory, prefix + path + '/'))
+    return commits
+
+
 def package(source, artifacts, plan_file):
     plan = json.loads(plan_file.read_text())
     if git(source, 'rev-parse', 'HEAD') != plan['upstream_commit']:
         raise ValueError('Unexpected upstream source')
     if (source / '.github/workflows').exists():
         raise ValueError('Patched source must not contain workflow files')
+    plan['submodules'] = submodule_commits(source)
     timestamp = git(source, 'log', '-1', '--format=%cI')
     plan['automation_commit'] = git(ROOT.parents[1], 'rev-parse', 'HEAD')
     if os.environ.get('GITHUB_SHA') and os.environ['GITHUB_SHA'] != plan['automation_commit']:

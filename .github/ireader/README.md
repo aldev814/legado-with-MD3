@@ -30,8 +30,6 @@
 - versionCode 为 `major*100000000 + minor*1000000 + patch*1000 + revision`；两个产品一致。支持 major 0..20、minor 0..99、patch 0..999、revision 1..999，超出即停止而不是溢出。
 - 补丁、签名身份或构建行为变更后必须提高 `config.json` 的 `patch_revision`，不覆盖旧版。
 
-`0005-upstream-325-verification.patch` 修正上游 `3.26.25` 的验证遗漏：设置映射测试补齐段落评论高度键与非默认值，字段数量改为反射模型数量；纯数字百分比格式标记为不可翻译。保留读写断言和所有检查门禁。
-
 ## 固定签名
 
 GitHub Repository secrets：`IREADER_KEYSTORE_BASE64` 和 `IREADER_KEYSTORE_PASSWORD`。
@@ -46,13 +44,15 @@ python3 .github/ireader/setup_signing.py --upload
 
 ## 配方维护与验证
 
-修订 3 在上游 `3.26.25` 上验证：菜单点击区域规则使用新增扩展文件，不再修改 `ReadSettings` 类体；水波纹样式通过独立装饰函数补充，宿主只保留一次调用，原有字段覆盖检查继续检查构造器和装饰器两部分。设备控制器和有效翻页提交钩子保持原行为。
+修订 4 适配上游统一菜单：全局设置保留 `AppChoiceDropdown`，支持掌阅的快捷菜单通过独立组件装饰 `AppActionMenu`；普通设备继续使用原菜单。水波纹文案放入各语言独立的 `ireader_water_ripple.xml`，硬件会话归属使用独立测试，避免编辑共享资源文件和上游测试的维护注释。
 
-`0001-smartos-water-ripple.patch` 是已验证正文水波纹改动，基于上游正式版 `3.26.23` / `35d013a0803931c333156d847ef1d1f3f324d83f`。
-`0002-fork-identity.patch` 配置独立包名、更新仓库、正式证书以及 fork 版本比较测试。修订 2 适配上游 `3.26.24`：仅在 Firebase 搜索包装调用前增加能力条件，不重排开关内部代码，以减少后续上游 UI 变更造成的冲突。
-`0003-upstream-footer-test.patch` 仅修正上游漫画页脚测试的三处页码查询：新版动画文字已将语义合并为 `1/57`，测试也按完整页码查询；原有位置、对齐和隐藏断言全部保留，不修改漫画功能。
-`0004-upstream-search-resources.patch` 仅替换设置搜索页的资源入口及 import，改用 `LocalResources.current`，保留索引构造与配置缓存键，修复上游新增的 16 处同源 lint 错误；不增加或放宽 lint baseline。
+- `0001-smartos-water-ripple.patch`：正文水波纹与独立速度、扩展和装饰器，以及相关回归测试。
+- `0002-fork-identity.patch`：独立包名、更新仓库、正式证书与 Firebase 隔离。
+- `0005-upstream-325-verification.patch`：仅保留纯百分比格式的不可翻译声明。上游已经吸收的页脚测试、搜索资源入口和设置映射测试修正已移除，不再携带过期测试改写。
 
+旧 Release 的源码与配方保持不变；当前配方针对新版统一菜单验证。
+
+构建初始化正式版固定的 UI 子模块，使用上游 `scripts/prepare-ui-forks.py` 准备依赖，并显式安装 SDK 37.2。构建元数据记录子模块提交，未初始化、提交不符或有本地改动时停止。复现源码请使用 `git clone --recurse-submodules --branch <发布标签>`；GitHub 自动生成的源码 ZIP 不包含子模块内容。
 ```sh
 python3 -m unittest discover -s .github/ireader/tests -v
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/ireader-ci.yml .github/workflows/ireader-release.yml

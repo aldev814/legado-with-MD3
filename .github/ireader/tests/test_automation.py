@@ -133,6 +133,26 @@ class SourceTest(unittest.TestCase):
         self.assertIn('networkTimeout=120000', wrapper)
         self.assertIn('retries=3', wrapper)
 
+    def test_uninitialized_submodule_is_rejected(self):
+        self.git('update-index', '--add', '--cacheinfo', '160000,' + 'a' * 40 + ',modules/ui')
+        with self.assertRaisesRegex(ValueError, 'not initialized'):
+            packager.submodule_commits(self.source)
+
+    def test_submodule_commit_is_recorded_and_local_edits_are_rejected(self):
+        module = self.source / 'modules/ui'
+        module.mkdir(parents=True)
+        def child(*args):
+            return subprocess.check_output(['git', *args], cwd=module, text=True, stderr=subprocess.DEVNULL).strip()
+        child('init', '-q'); child('config', 'user.name', 'Fixture'); child('config', 'user.email', 'fixture@example.invalid')
+        (module / 'ui.kt').write_text('pinned source\n')
+        child('add', '.'); child('-c', 'commit.gpgsign=false', 'commit', '-qm', 'pinned')
+        commit = child('rev-parse', 'HEAD')
+        self.git('update-index', '--add', '--cacheinfo', '160000,' + commit + ',modules/ui')
+        self.assertEqual({'modules/ui': commit}, packager.submodule_commits(self.source))
+        (module / 'ui.kt').write_text('local edits\n')
+        with self.assertRaisesRegex(ValueError, 'local changes'):
+            packager.submodule_commits(self.source)
+
     def test_dirty_or_wrong_release_is_rejected(self):
         with self.assertRaises(ValueError):
             prepare.prepare(self.source, {**self.plan, 'upstream_commit': '0' * 40})
@@ -227,6 +247,16 @@ class ArtifactTest(unittest.TestCase):
         self.assertEqual(signer.certificate('Signer #1 certificate SHA-256 digest: ' + 'A' * 64), 'a' * 64)
         with self.assertRaises(ValueError):
             signer.certificate('No certificate')
+
+
+class PatchBoundaryTest(unittest.TestCase):
+    def test_feature_uses_owned_resources_and_ownership_guard(self):
+        paths = {line.split()[3][2:] for line in (ROOT / 'patches/0001-smartos-water-ripple.patch').read_text().splitlines()
+                 if line.startswith('diff --git ')}
+        self.assertNotIn('app/src/main/java/io/legado/app/domain/model/settings/ReadSettings.kt', paths)
+        self.assertNotIn('app/src/test/java/io/legado/app/ui/book/read/ReadBookDomainSplitBoundaryTest.kt', paths)
+        self.assertFalse(any(path.startswith('app/src/main/res/') and path.endswith('/strings.xml') for path in paths))
+        self.assertIn('app/src/main/res/values/ireader_water_ripple.xml', paths)
 
 
 if __name__ == '__main__':
