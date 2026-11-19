@@ -112,6 +112,18 @@ jobs:
         run: python3 scripts/prepare-ui-forks.py
       - name: Record exact source and pinned submodule revisions
         run: python3 control/.github/ireader/package_source.py source artifacts plan/release-plan.json
+      - name: Check reader menu integration first
+        working-directory: source
+        env:
+          APP_VERSION_NAME: ${{ needs.detect.outputs.release_tag }}
+          COMMIT_NUMBER: ${{ needs.detect.outputs.commit_number }}
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          ./gradlew ":app:testApp${PRODUCT}DebugUnitTest" \
+            --tests io.legado.app.feature.reader.components.WaterRipplePageAnimationMenuTest \
+            --tests io.legado.app.ui.widget.components.menu.ReaderActionMenuContractTest \
+            --max-workers=1 --no-parallel --no-daemon --no-configuration-cache \
+            '-Pkotlin.daemon.jvmargs=-Xmx6g -Xms256m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC'
       - name: Run unit tests, lint, architecture check and Release/R8 build
         working-directory: source
         env:
@@ -124,7 +136,7 @@ jobs:
             ":app:lintApp${PRODUCT}Debug" \
             verifyConfigArchitecture \
             ":app:assembleApp${PRODUCT}Release" \
-            --max-workers=1 --no-parallel --no-daemon --no-configuration-cache \
+            --max-workers=1 --no-parallel --no-daemon --no-configuration-cache --continue \
             '-Pkotlin.daemon.jvmargs=-Xmx6g -Xms256m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC'
       - name: Sign and verify product APKs and retain its R8 mapping
         env:

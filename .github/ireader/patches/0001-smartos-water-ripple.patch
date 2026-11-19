@@ -399,29 +399,28 @@ index c48d12650d463be3ba145111d7f0b4d37cd537c9..2f9b4c450e66197be71cbdce8adec898
      val uiState = _uiState.asStateFlow()
      private var pendingState = _uiState.value
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt b/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
-index efa1f803b4df5f2c5a2ef74209107749343d8454..63ccc60922e65d8363779de8e76c96dc29221f9a 100644
+index efa1f803b4df5f2c5a2ef74209107749343d8454..30de5c1895ef4c7f6aadba682857d1853d36d1e2 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
 +++ b/app/src/main/java/io/legado/app/ui/book/read/sheet/GlobalThemePage.kt
-@@ -53,6 +53,7 @@
+@@ -53,6 +53,8 @@
  import coil3.compose.AsyncImage
  import io.legado.app.R
  import io.legado.app.constant.PageAnim
 +import io.legado.app.feature.reader.model.readerPageAnimationOptions
++import io.legado.app.feature.reader.model.readerVisiblePageAnimation
  import io.legado.app.data.repository.ReadPreferences
  import io.legado.app.domain.model.settings.ReadStyleItem
  import io.legado.app.help.config.ReadStyleResolver
-@@ -97,7 +98,9 @@
+@@ -97,7 +99,7 @@
  ) {
      // Derive values directly from styleConfig (reactive state)
      val textSize = styleConfig.textSize
 -    val pageAnim = styleConfig.pageAnim
-+    val pageAnim = if (!styleConfig.waterRippleSupported && styleConfig.pageAnim == PageAnim.waterRipplePageAnim) {
-+        PageAnim.noAnim
-+    } else styleConfig.pageAnim
++    val pageAnim = readerVisiblePageAnimation(styleConfig.pageAnim, styleConfig.waterRippleSupported)
      val pageAnimSpeed = styleConfig.pageAnimSpeed
      val styleSelect = styleConfig.styleSelect
      val shareLayout = styleConfig.shareLayout
-@@ -353,24 +356,17 @@
+@@ -353,24 +355,17 @@
  
          // 每一项带自己的 PageAnim 取值：菜单里加一项或换个顺序都不会再让「下标 == 常量值」这个
          // 隐含约定错位（菜单里加一项或换个顺序都不会再让「下标 == 常量值」这个隐含约定错位）。
@@ -451,7 +450,7 @@ index efa1f803b4df5f2c5a2ef74209107749343d8454..63ccc60922e65d8363779de8e76c96dc
              R.string.page_anim_speed_fastest,
              R.string.page_anim_speed_fast,
              R.string.page_anim_speed_moderate,
-@@ -418,10 +414,13 @@
+@@ -418,10 +413,13 @@
              // 翻页动画速度挡位：与右侧 SpaceBar 卡片同款方卡，点开选极速 / 快速 / 适中 / 优雅。
              AppChoiceDropdown(
                  options = pageAnimSpeedChoices,
@@ -553,30 +552,31 @@ index a9496a0a551993c42b6013ab37dc0aaf3cab5600..d5fa9446454b8cef2f057906d22f86ee
      )
  }
 diff --git a/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt b/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt
-index 796bae7dd104f8adc62d960b2c1c6fa18922695a..ef25fd2e7e5ec28bfc030a09021aa115feb8e8dc 100644
+index 796bae7dd104f8adc62d960b2c1c6fa18922695a..6262151a48534e1b947185ba51614cc598ecba6c 100644
 --- a/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt
 +++ b/app/src/main/java/io/legado/app/ui/book/read/sheet/ReaderMoreActionsSheet.kt
-@@ -51,6 +51,9 @@
+@@ -51,6 +51,10 @@
  import androidx.compose.ui.unit.dp
  import io.legado.app.R
  import io.legado.app.constant.PageAnim
 +import io.legado.app.feature.reader.components.WaterRipplePageAnimationMenu
++import io.legado.app.feature.reader.model.readerVisiblePageAnimation
 +import io.legado.app.ui.book.read.ReadBookStyleConfig
 +import io.legado.app.ui.book.read.ConfigUpdate
  import io.legado.app.data.entities.Book
  import io.legado.app.model.ReadBook
  import io.legado.app.ui.book.read.MoreActionIds
-@@ -316,7 +319,8 @@
+@@ -316,7 +320,8 @@
  
              "page_anim" -> PageAnimDropdown(
                  expanded = expanded,
 -                currentPageAnim = state.book?.getPageAnim() ?: -1,
-+                currentPageAnim = state.styleConfig.bookPageAnim,
++                currentPageAnim = readerVisiblePageAnimation(state.styleConfig.bookPageAnim, state.styleConfig.waterRippleSupported),
 +                waterRippleStyle = state.styleConfig,
                  modifier = Modifier.matchParentSize(),
                  onDismissRequest = { expanded = false },
                  onIntent = onIntent,
-@@ -531,10 +535,23 @@
+@@ -531,10 +536,23 @@
  private fun PageAnimDropdown(
      expanded: Boolean,
      currentPageAnim: Int,
@@ -600,15 +600,6 @@ index 796bae7dd104f8adc62d960b2c1c6fa18922695a..ef25fd2e7e5ec28bfc030a09021aa115
      val pageAnimOptions = listOf(
          R.string.btn_default_s to -1,
          R.string.page_anim_cover to PageAnim.coverPageAnim,
-@@ -555,7 +572,7 @@
-                     AppAction(
-                         id = "$ReaderMorePageAnimIdPrefix$value",
-                         label = stringResource(label),
--                        selected = currentPageAnim == value,
-+                        selected = (if (currentPageAnim == PageAnim.waterRipplePageAnim) PageAnim.noAnim else currentPageAnim) == value,
-                     )
-                 }.toImmutableList(),
-             ),
 diff --git a/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt b/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt
 index 2eec81c8f525d7e1f8831a0e28dc153f1e1501ce..4600355f77b3e61feafcccae792050b86133f7b7 100644
 --- a/app/src/test/java/io/legado/app/data/repository/ReadStyleThemeTransferTest.kt
@@ -821,7 +812,7 @@ diff --git a/app/src/main/java/io/legado/app/feature/reader/model/ReaderPageAnim
 new file mode 100644
 --- /dev/null
 +++ b/app/src/main/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptions.kt
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,33 @@
 +package io.legado.app.feature.reader.model
 +
 +import androidx.annotation.StringRes
@@ -851,6 +842,10 @@ new file mode 100644
 +        if (supported) add(ReaderPageAnimationOption(R.string.page_anim_water_ripple, PageAnim.waterRipplePageAnim))
 +        add(ReaderPageAnimationOption(R.string.page_anim_none, PageAnim.noAnim))
 +    }.toImmutableList()
++
++/** Display fallback only; keep the persisted value intact for cross-device sync. */
++fun readerVisiblePageAnimation(value: Int, supported: Boolean): Int =
++    if (!supported && value == PageAnim.waterRipplePageAnim) PageAnim.noAnim else value
 diff --git a/app/src/main/java/io/legado/app/feature/reader/platform/SmartOsPageTurnEffect.kt b/app/src/main/java/io/legado/app/feature/reader/platform/SmartOsPageTurnEffect.kt
 new file mode 100644
 --- /dev/null
@@ -1025,7 +1020,7 @@ diff --git a/app/src/test/java/io/legado/app/feature/reader/model/ReaderPageAnim
 new file mode 100644
 --- /dev/null
 +++ b/app/src/test/java/io/legado/app/feature/reader/model/ReaderPageAnimationOptionsTest.kt
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,22 @@
 +package io.legado.app.feature.reader.model
 +
 +import io.legado.app.constant.PageAnim
@@ -1041,6 +1036,11 @@ new file mode 100644
 +        assertEquals(1, supported.count { it.value == 9 })
 +        assertEquals(-1, readerPageAnimationOptions(true, true).first().value)
 +        assertEquals(ordinary.size + 1, readerPageAnimationOptions(false, true).size)
++    }
++    @Test fun `unsupported display fallback preserves defaults and ordinary animation values`() {
++        for (value in -1..8) assertEquals(value, readerVisiblePageAnimation(value, false))
++        assertEquals(PageAnim.noAnim, readerVisiblePageAnimation(9, false))
++        assertEquals(9, readerVisiblePageAnimation(9, true))
 +    }
 +}
 diff --git a/app/src/test/java/io/legado/app/ui/book/read/ReaderConfigSnapshotInvariantTest.kt b/app/src/test/java/io/legado/app/ui/book/read/ReaderConfigSnapshotInvariantTest.kt
@@ -1270,7 +1270,7 @@ diff --git a/app/src/test/java/io/legado/app/feature/reader/components/WaterRipp
 new file mode 100644
 --- /dev/null
 +++ b/app/src/test/java/io/legado/app/feature/reader/components/WaterRipplePageAnimationMenuTest.kt
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,122 @@
 +package io.legado.app.feature.reader.components
 +
 +import android.app.Application
@@ -1326,7 +1326,7 @@ new file mode 100644
 +            AppTheme(AppUiConfiguration(appShell = AppShellSettings(composeEngine = engine))) {
 +                Box(Modifier.size(200.dp)) {
 +                    WaterRipplePageAnimationMenu(
-+                        expanded = expanded, style = style,
++                        expanded = expanded, style = style, modifier = Modifier.matchParentSize(),
 +                        onAnimationChanged = { animations += it },
 +                        onSpeedChanged = { speeds += it },
 +                        onDismissRequest = { dismisses++; expanded = false },
@@ -1339,6 +1339,7 @@ new file mode 100644
 +        if (selectSpeed) {
 +            val lists = compose.onAllNodes(hasScrollToIndexAction(), useUnmergedTree = true)
 +            if (lists.fetchSemanticsNodes().isNotEmpty()) lists.onLast().performScrollToNode(hasText(slow))
++            else compose.onNodeWithText(slow, useUnmergedTree = true).performScrollTo()
 +            compose.onNodeWithText(slow, useUnmergedTree = true).performClick()
 +            compose.runOnIdle { assertEquals(listOf(2), speeds); assertEquals(emptyList<Int>(), animations) }
 +        } else {
