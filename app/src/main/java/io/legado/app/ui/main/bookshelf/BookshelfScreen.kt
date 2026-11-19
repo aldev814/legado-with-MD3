@@ -1,0 +1,1834 @@
+package io.legado.app.ui.main.bookshelf
+
+import android.content.ClipData
+import android.content.res.Configuration
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.ManagedActivityResultLauncher
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.ReportDrawnWhen
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.outlined.ViewCarousel
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.legado.app.R
+import io.legado.app.data.entities.BookGroup
+import io.legado.app.domain.model.PrivateUnlockTarget
+import io.legado.app.help.security.BiometricUnlockLauncher
+import io.legado.app.ui.book.group.GroupEditSheet
+import io.legado.app.ui.book.info.GroupSelectSheet
+import io.legado.app.ui.main.bookCoverSharedElementKey
+import io.legado.app.ui.theme.ComposeEngine
+import io.legado.app.ui.theme.LegadoTheme
+import io.legado.app.ui.theme.LocalBottomOverlayPadding
+import io.legado.app.ui.theme.adaptiveContentPaddingBookshelf
+import io.legado.app.ui.theme.adaptiveHorizontalPadding
+import io.legado.app.ui.widget.components.ActionItem
+import io.legado.app.ui.widget.components.AppPullToRefresh
+import io.legado.app.ui.widget.components.AppScaffold
+import io.legado.app.ui.widget.components.AppTextField
+import io.legado.app.ui.widget.components.EmptyMessage
+import io.legado.app.ui.widget.components.SearchBar
+import io.legado.app.ui.widget.components.SelectionBottomBar
+import io.legado.app.ui.widget.components.alert.AppAlertDialog
+import io.legado.app.ui.widget.components.card.NormalCard
+import io.legado.app.ui.widget.components.card.TextCard
+import io.legado.app.ui.widget.components.checkBox.AppCheckbox
+
+import io.legado.app.ui.widget.components.filePicker.FilePickerSheet
+import io.legado.app.ui.widget.components.icon.AppIcon
+import io.legado.app.ui.widget.components.icon.AppIcons
+import io.legado.app.ui.widget.components.image.cover.bookshelfSharedCoverSourceId
+import io.legado.app.ui.widget.components.importComponents.SourceInputDialog
+import io.legado.app.ui.widget.components.lazylist.FastScrollLazyVerticalGrid
+import io.legado.app.ui.widget.components.list.TopFloatingStickyItem
+import io.legado.app.ui.widget.components.log.AppLogSheet
+import io.legado.app.ui.widget.components.privacy.PrivateLockedPage
+import io.legado.app.ui.widget.components.privacy.findFragmentActivity
+import io.legado.app.ui.widget.components.progressIndicator.AppCircularProgressIndicator
+import io.legado.app.ui.widget.components.reorderAccessibility
+import io.legado.app.ui.widget.components.tabRow.AppTabRow
+import io.legado.app.ui.widget.components.tabRow.AppTabRowIconButton
+import io.legado.app.ui.widget.components.text.AppText
+import io.legado.app.ui.widget.components.topbar.GlassMediumFlexibleTopAppBar
+import io.legado.app.ui.widget.components.topbar.GlassTopAppBarDefaults
+import io.legado.app.ui.widget.components.topbar.GlassTopAppBarScrollBehavior
+import io.legado.app.ui.widget.components.menu.AppAction
+import io.legado.app.ui.widget.components.menu.AppActionGroup
+import io.legado.app.ui.widget.components.menu.AppActionMenu
+import io.legado.app.ui.widget.components.topbar.TopBarActionButton
+import io.legado.app.ui.theme.isMiuixHyperOs4Enabled
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import org.koin.androidx.compose.koinViewModel
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyGridState
+
+@OptIn(
+    ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
+    ExperimentalMaterial3ExpressiveApi::class, ExperimentalSharedTransitionApi::class,
+    ExperimentalAnimationApi::class
+)
+@Composable
+fun BookshelfRouteScreen(
+    viewModel: BookshelfViewModel = koinViewModel(),
+    scrollToTopRequest: Long = 0L,
+    onScrollToTopRequestHandled: (Long) -> Unit = {},
+    onBookClick: (BookShelfItem, String?) -> Unit,
+    onBookLongClick: (book: BookShelfItem, sharedCoverKey: String?) -> Unit,
+    onNavigateToSearch: (String) -> Unit,
+    onNavigateToRemoteImport: () -> Unit,
+    onNavigateToLocalImport: () -> Unit,
+    onNavigateToCache: (Long) -> Unit,
+    onNavigateToSettings: () -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val allGroups by viewModel.allGroupsFlow.collectAsStateWithLifecycle()
+    // 打开书籍会立刻把最后阅读时间落库，排序随之变化：退场动画期间若让书架跟着重排，
+    // 正参与共享转场的封面会和它所在的格子错位。因此只在「转场目标是离开书架」时渲染
+    // 离开前那一版列表；目标一旦回到可见（正常返回、预测性返回都算），立刻恢复用最新
+    // 排序 —— 重排发生在书架不可见的时候，回到书架时看到的已经是排好的结果。
+    val transition = animatedVisibilityScope?.transition
+    // 判据是「目标不再是可见」而不是「已经退完」：打开书会立刻落库最后阅读时间，列表 Flow
+    // 在**动画进行中**就重发一次。用 PostExit 的话整块网格正好在动画那 420ms 里跟着重排、
+    // 每张封面重建 Coil 请求——用户看到的「从书架打开卡、从详情页打开丝滑」差的就是这一条。
+    val isLeavingShelf = transition != null && transition.targetState != EnterExitState.Visible
+    var leavingShelfState by remember { mutableStateOf<BookshelfUiState?>(null) }
+    LaunchedEffect(isLeavingShelf) {
+        if (isLeavingShelf) return@LaunchedEffect
+        // 可见期间持续跟随最新状态，快照因此不会残留成过期版本（例如点了私密书但没跳转）
+        snapshotFlow { state }.collect { leavingShelfState = it }
+    }
+    BookshelfScreen(
+        uiState = if (isLeavingShelf) leavingShelfState ?: state else state,
+        onIntent = viewModel::onIntent,
+        effects = viewModel.effects,
+        allGroups = allGroups,
+        scrollToTopRequest = scrollToTopRequest,
+        onScrollToTopRequestHandled = onScrollToTopRequestHandled,
+        onBookClick = onBookClick,
+        onBookLongClick = onBookLongClick,
+        onNavigateToSearch = onNavigateToSearch,
+        onNavigateToRemoteImport = onNavigateToRemoteImport,
+        onNavigateToLocalImport = onNavigateToLocalImport,
+        onNavigateToCache = onNavigateToCache,
+        onNavigateToSettings = onNavigateToSettings,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
+    )
+}
+
+@OptIn(
+    ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
+    ExperimentalMaterial3ExpressiveApi::class, ExperimentalSharedTransitionApi::class,
+    ExperimentalAnimationApi::class
+)
+@Composable
+fun BookshelfScreen(
+    uiState: BookshelfUiState,
+    onIntent: (BookshelfIntent) -> Unit,
+    effects: kotlinx.coroutines.flow.Flow<BookshelfEffect>,
+    allGroups: List<io.legado.app.data.entities.BookGroup>,
+    scrollToTopRequest: Long = 0L,
+    onScrollToTopRequestHandled: (Long) -> Unit = {},
+    onBookClick: (BookShelfItem, String?) -> Unit,
+    onBookLongClick: (book: BookShelfItem, sharedCoverKey: String?) -> Unit,
+    onNavigateToSearch: (String) -> Unit,
+    onNavigateToRemoteImport: () -> Unit,
+    onNavigateToLocalImport: () -> Unit,
+    onNavigateToCache: (Long) -> Unit,
+    // 私密功能需要本地密码，未设置时引导去设置页
+    onNavigateToSettings: () -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+) {
+    val scope = rememberCoroutineScope()
+
+    ReportDrawnWhen { !uiState.isInitialLoading }
+
+    val clipboardManager = LocalClipboard.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    // 资源串在 composable 作用域内解析：LocalContext.current.getString 不感知配置变化，
+    // 语言/字体缩放切换后可能拿到过期值（LocalContextGetResourceValueCall）。
+    val unlockTitle = stringResource(R.string.private_unlock_title)
+    val unlockSubtitle = stringResource(R.string.private_unlock_subtitle)
+    val unlockUsePassword = stringResource(R.string.private_unlock_use_password)
+
+    /** 系统生物验证框必须由 FragmentActivity 承载；拿不到宿主就直接用应用内密码 */
+    fun launchBiometricUnlock(target: PrivateUnlockTarget) {
+        val activity = context.findFragmentActivity()
+        if (activity == null) {
+            onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.PrivatePassword(target)))
+            return
+        }
+        BiometricUnlockLauncher.launch(
+            activity = activity,
+            title = unlockTitle,
+            subtitle = unlockSubtitle,
+            negativeButtonText = unlockUsePassword,
+            onPassword = { password ->
+                onIntent(BookshelfIntent.UnlockPrivateWithBiometricPassword(target, password))
+            },
+            onFallback = {
+                onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.PrivatePassword(target)))
+            },
+            onError = { message ->
+                scope.launch { snackbarHostState.showSnackbar(message) }
+            },
+        )
+    }
+
+    /**
+     * 点击脱敏的私密书籍：等同于点了一次"验证"。
+     *
+     * 验证通过后由 ViewModel 打开阅读，而不是在这里直接调 onBookClick——解锁是异步的，
+     * 要等列表重新包含这本书再打开，否则事件会早于状态更新而丢失。
+     */
+    val requestBookUnlock: (String) -> Unit = { bookUrl ->
+        onIntent(BookshelfIntent.RequestPrivateUnlock(PrivateUnlockTarget.Book(bookUrl)))
+    }
+
+    /**
+     * 打开书籍的统一出口。
+     *
+     * 不在这里撤销授权：撤销的所有权已经移到阅读器入口的私密闸门——
+     * 它是"授权存活到离开阅读器为止"的唯一事实来源。在这里提前撤销会让紧随其后的
+     * 闸门把刚验证过的用户再拦一次。
+     */
+    val openBook: (BookShelfItem, String?) -> Unit = { book, sharedCoverKey ->
+        onBookClick(book, sharedCoverKey)
+    }
+
+    LaunchedEffect(Unit) {
+        effects.collect { effect ->
+            when (effect) {
+                is BookshelfEffect.ShowSnackbar -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = effect.message,
+                        actionLabel = effect.actionLabel,
+                        withDismissAction = true
+                    )
+                    if (result == SnackbarResult.ActionPerformed && effect.url != null) {
+                        clipboardManager.setClipEntry(
+                            ClipEntry(
+                                ClipData.newPlainText(
+                                    "url",
+                                    effect.url
+                                )
+                            )
+                        )
+                    }
+                }
+
+                is BookshelfEffect.RequestBiometricUnlock -> launchBiometricUnlock(effect.target)
+
+                BookshelfEffect.NavigateToLocalPasswordSettings -> onNavigateToSettings()
+            }
+        }
+    }
+
+    // 解锁是"一致性关键"的动作：等这本书不再是锁定态、且重新出现在列表里之后再打开，
+    // 否则事件会早于状态更新而丢失。
+    //
+    // 两个坑都在 key 与判定上：
+    // 1. privateAccess 必须进 key。"每次都要验证"频率下，验证成功只把目标写进
+    //    grantedBookUrls，列表内容一眼不变——只拿列表当 key 的话这次授权压根不会触发重启；
+    // 2. 判定用"这本书还锁不锁"而不是 privateAccess.isUnlocked，后者的只在
+    //    "本次进程验证一次"频率下才置位，用它当门槛会让"每次都要验证"的用户永远打不开。
+    LaunchedEffect(
+        uiState.pendingOpenBookUrl,
+        uiState.privateAccess,
+        uiState.items,
+        uiState.visibleGroupBooks
+    ) {
+        val url = uiState.pendingOpenBookUrl ?: return@LaunchedEffect
+        val bookUi = uiState.items.firstOrNull { it.book.bookUrl == url }
+            ?: uiState.visibleGroupBooks[uiState.selectedGroupId]
+                ?.firstOrNull { it.book.bookUrl == url }
+            ?: return@LaunchedEffect
+        if (uiState.isBookLocked(bookUi)) return@LaunchedEffect
+        onIntent(BookshelfIntent.ConsumePendingOpenBook)
+        openBook(bookUi.book, null)
+    }
+
+    LaunchedEffect(uiState.pendingUploadUrl) {
+        val url = uiState.pendingUploadUrl ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "上传成功: $url",
+            actionLabel = "复制链接",
+            withDismissAction = true,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            clipboardManager.setClipEntry(
+                ClipEntry(ClipData.newPlainText("url", url))
+            )
+        }
+        onIntent(BookshelfIntent.UploadResultConsumed)
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                val groupId = uiState.groups.getOrNull(uiState.selectedGroupIndex)?.groupId ?: -1L
+                onIntent(BookshelfIntent.ImportFromUri(it, groupId))
+            }
+        }
+    )
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri ->
+            uri?.let { onIntent(BookshelfIntent.ExportToUri(it, uiState.items)) }
+        }
+    )
+
+    val activeOverlay = uiState.activeOverlay
+    val showGroupMenu = activeOverlay == BookshelfOverlay.GroupMenu
+    val isEditMode = uiState.isEditMode
+    val selectedBookUrls = uiState.selectedBookUrls
+    val isInFolderRoot = uiState.isInFolderRoot
+    val bookGroupStyle = uiState.bookGroupStyle
+
+    val transitionState = remember { SeekableTransitionState(isInFolderRoot) }
+    val folderTransition = rememberTransition(transitionState, label = "FolderTransition")
+    LaunchedEffect(isInFolderRoot) {
+        if (transitionState.targetState != isInFolderRoot) {
+            transitionState.animateTo(isInFolderRoot)
+        }
+    }
+
+    val groupOrderKey = remember(uiState.groups) { uiState.groups.map { it.groupId } }
+    val pagerState = key(groupOrderKey) {
+        rememberPagerState(
+            initialPage = uiState.selectedGroupIndex.coerceAtLeast(0),
+            pageCount = { uiState.groups.size }
+        )
+    }
+    val folderGridState = rememberLazyGridState()
+    val standaloneSearchGridState = rememberLazyGridState()
+    val groupGridStates = mutableMapOf<Long, LazyGridState>()
+    uiState.groups.forEach { group ->
+        key(group.groupId) {
+            groupGridStates[group.groupId] = rememberLazyGridState()
+        }
+    }
+    val latestGroups by rememberUpdatedState(uiState.groups)
+    val latestSelectedGroupId by rememberUpdatedState(uiState.selectedGroupId)
+
+    LaunchedEffect(uiState.selectedGroupIndex, uiState.groups.size) {
+        if (uiState.groups.isNotEmpty()
+            && uiState.selectedGroupIndex in uiState.groups.indices
+            && pagerState.currentPage != uiState.selectedGroupIndex
+        ) {
+            pagerState.scrollToPage(uiState.selectedGroupIndex)
+        }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                val groups = latestGroups
+                if (groups.isNotEmpty() && page in groups.indices) {
+                    val targetGroupId = groups[page].groupId
+                    if (latestSelectedGroupId != targetGroupId) {
+                        onIntent(BookshelfIntent.ChangeGroup(targetGroupId))
+                    }
+                }
+            }
+    }
+
+    // pagerState.settledPage 是高频快照读，留在 derivedStateOf 内以免扩散到整个 Screen 作用域；
+    // remember 的 key 必须覆盖 lambda 读到的 uiState 字段，否则会永久缓存首次组合的 uiState。
+    val currentTabGroupId by remember(uiState.groups) {
+        derivedStateOf {
+            uiState.groups.getOrNull(pagerState.settledPage)?.groupId ?: BookGroup.IdAll
+        }
+    }
+    val searchGroupExists =
+        uiState.allGroups.any { it.groupId == uiState.selectedGroupId }
+    val currentGroupId by remember(uiState.isSearch, uiState.selectedGroupId, searchGroupExists) {
+        derivedStateOf {
+            if (uiState.isSearch && searchGroupExists) {
+                uiState.selectedGroupId
+            } else {
+                currentTabGroupId
+            }
+        }
+    }
+    val isUsingStandaloneSearchGroup by remember(uiState.isSearch, uiState.groups) {
+        derivedStateOf {
+            uiState.isSearch && uiState.groups.none { it.groupId == currentGroupId }
+        }
+    }
+    val isShowingFolderRoot =
+        bookGroupStyle == 2 && isInFolderRoot && !isUsingStandaloneSearchGroup
+    LaunchedEffect(scrollToTopRequest) {
+        if (scrollToTopRequest > 0L) {
+            val targetGridState = when {
+                isShowingFolderRoot -> folderGridState
+                isUsingStandaloneSearchGroup -> standaloneSearchGridState
+                else -> groupGridStates[currentGroupId]
+            }
+            try {
+                targetGridState?.animateScrollToItem(0)
+            } finally {
+                onScrollToTopRequestHandled(scrollToTopRequest)
+            }
+        }
+    }
+    val currentGroupBookCount = uiState.currentGroupBookCount
+
+    val clearSelection = {
+        onIntent(BookshelfIntent.ClearSelection)
+    }
+    val exitEditMode = {
+        onIntent(BookshelfIntent.ExitEditMode)
+    }
+    val toggleEditMode = {
+        onIntent(BookshelfIntent.ToggleEditMode)
+    }
+    val toggleBookSelection: (String) -> Unit = { bookUrl ->
+        onIntent(BookshelfIntent.ToggleBookSelection(bookUrl))
+    }
+
+    LaunchedEffect(pagerState.currentPage, isInFolderRoot) {
+        clearSelection()
+    }
+
+    BackHandler(enabled = isEditMode) {
+        if (selectedBookUrls.isNotEmpty()) {
+            clearSelection()
+        } else {
+            exitEditMode()
+        }
+    }
+
+    val currentGroupName = uiState.currentGroupName
+
+    PredictiveBackHandler(enabled = bookGroupStyle == 2 && !isInFolderRoot && !isEditMode) { progress ->
+        try {
+            progress.collect { backEvent ->
+                transitionState.seekTo(backEvent.progress, targetState = true)
+            }
+            onIntent(BookshelfIntent.SetInFolderRoot(true))
+            transitionState.animateTo(true)
+        } catch (e: CancellationException) {
+            transitionState.animateTo(false)
+        }
+    }
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val bookshelfFolderLayoutMode = if (isLandscape) {
+        uiState.settings.bookshelfFolderLayoutModeLandscape
+    } else {
+        uiState.settings.bookshelfFolderLayoutModePortrait
+    }
+    val bookshelfFolderLayoutGrid = if (isLandscape) {
+        uiState.settings.bookshelfFolderLayoutGridLandscape
+    } else {
+        uiState.settings.bookshelfFolderLayoutGridPortrait
+    }
+    val bookshelfFolderLayoutList = if (isLandscape) {
+        uiState.settings.bookshelfFolderLayoutListLandscape
+    } else {
+        uiState.settings.bookshelfFolderLayoutListPortrait
+    }
+    val currentMenuGroupId by remember(uiState.isSearch, uiState.selectedGroupId) {
+        derivedStateOf { if (uiState.isSearch) uiState.selectedGroupId else currentTabGroupId }
+    }
+    // 分组标签栏只在 bookGroupStyle == 0（Tab）时展示，见下方 AppTabRow。标签可见时，
+    // 编辑态的「已选 / 共」已在 TopBar subtitle，切分组也有标签栏入口，吸顶条是冗余的；
+    // 标签隐藏（Hide Tab / Folder）时才由它补上组名与分组菜单。
+    val editStickySummary = buildBookshelfEditSticky(
+        isEditMode = uiState.isEditMode,
+        bookGroupStyle = uiState.bookGroupStyle,
+        selectedCount = uiState.selectedBookUrls.size,
+        currentGroupTotalCount = currentGroupBookCount,
+        groupName = currentGroupName,
+    )
+
+    val scrollBehavior = GlassTopAppBarDefaults.defaultScrollBehavior()
+    val showAlternateSearchInMenu = LegadoTheme.composeEngine == ComposeEngine.Coui ||
+            isMiuixHyperOs4Enabled()
+    val toggleShelfFilter = {
+        toggleBookshelfFilter(
+            isSearch = uiState.isSearch,
+            selectedGroupId = uiState.selectedGroupId,
+            currentTabGroupId = currentTabGroupId,
+            onIntent = onIntent,
+        )
+    }
+    val onSearchClick = {
+        if (uiState.settings.bookshelfSearchActionDirectToSearch) {
+            onNavigateToSearch(uiState.searchKey.trim())
+        } else {
+            toggleShelfFilter()
+        }
+    }
+    val onAlternateSearch = {
+        if (uiState.settings.bookshelfSearchActionDirectToSearch) {
+            toggleShelfFilter()
+        } else {
+            onNavigateToSearch(uiState.searchKey.trim())
+        }
+    }
+    val hostBottomOverlayPadding = LocalBottomOverlayPadding.current
+    val density = LocalDensity.current
+    var selectionOverlayHeight by remember { mutableStateOf(0.dp) }
+
+    AppScaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        contentWindowInsets = WindowInsets(0),
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .padding(bottom = 72.dp.coerceAtLeast(selectionOverlayHeight))
+            )
+        },
+        topBar = {
+            val visibleGroup = uiState.groups.getOrNull(pagerState.currentPage)
+            val isContentScrolled = when {
+                uiState.groups.isEmpty() && !uiState.isSearch -> false
+                isShowingFolderRoot -> folderGridState.canScrollBackward
+                isUsingStandaloneSearchGroup ->
+                    !uiState.selectedGroupLocked && standaloneSearchGridState.canScrollBackward
+                visibleGroup != null && !uiState.isGroupLocked(visibleGroup) ->
+                    groupGridStates[visibleGroup.groupId]?.canScrollBackward == true
+                else -> false
+            }
+            BookshelfTopBar(
+                uiState = uiState,
+                scrollBehavior = scrollBehavior,
+                isContentScrolled = isContentScrolled,
+                onSearchClick = onSearchClick,
+                onSearchLongClick = onAlternateSearch.takeUnless { showAlternateSearchInMenu },
+                onSearchQueryChange = { onIntent(BookshelfIntent.SetSearchKey(it)) },
+                onSearchSubmit = { rawQuery ->
+                    rawQuery.trim()
+                        .takeIf { it.isNotEmpty() }
+                        ?.let(onNavigateToSearch)
+                },
+                onClearSearch = { onIntent(BookshelfIntent.SetSearchKey("")) },
+                actions = {
+                    if (!isEditMode) {
+                        val moreActions = buildList {
+                            if (showAlternateSearchInMenu) {
+                                val searchFirst = uiState.settings.bookshelfSearchActionDirectToSearch
+                                add(
+                                    AppAction(
+                                        id = "alternate_search",
+                                        label = stringResource(
+                                            if (searchFirst) R.string.bookshelf_filter else R.string.search
+                                        ),
+                                        icon = AppIcons.leadingOrNull(
+                                            if (searchFirst) AppIcons.Filter else AppIcons.Search
+                                        ),
+                                    )
+                                )
+                            }
+                            add(AppAction("add_remote", stringResource(R.string.add_remote_book), icon = AppIcons.leadingOrNull(Icons.Default.Wifi)))
+                            add(AppAction("add_local", stringResource(R.string.book_local), icon = AppIcons.leadingOrNull(Icons.Default.Save)))
+                            add(AppAction("update_toc", stringResource(R.string.update_toc), icon = AppIcons.leadingOrNull(Icons.Default.Refresh)))
+                            add(AppAction("layout", stringResource(R.string.layout_setting), icon = AppIcons.leadingOrNull(Icons.Default.GridView)))
+                            add(AppAction("group_manage", stringResource(R.string.group_manage), icon = AppIcons.leadingOrNull(Icons.Outlined.ViewCarousel)))
+                            add(AppAction("add_url", stringResource(R.string.add_url), icon = AppIcons.leadingOrNull(Icons.Default.Link)))
+                            add(AppAction("selection_mode", stringResource(R.string.selection_mode), icon = AppIcons.leadingOrNull(Icons.Default.Edit)))
+                            add(AppAction("bookshelf_management", stringResource(R.string.bookshelf_management), icon = AppIcons.leadingOrNull(Icons.Default.Bookmarks)))
+                            add(AppAction("export", stringResource(R.string.export_bookshelf), icon = AppIcons.leadingOrNull(Icons.Default.UploadFile)))
+                            add(AppAction("import", stringResource(R.string.import_bookshelf), icon = AppIcons.leadingOrNull(Icons.Default.CloudDownload)))
+                            add(AppAction("log", stringResource(R.string.log), icon = AppIcons.leadingOrNull(Icons.Default.History)))
+                        }.toImmutableList()
+                        AppActionMenu(
+                            groups = persistentListOf(
+                                AppActionGroup(id = "bookshelf_more", actions = moreActions)
+                            ),
+                            onAction = { id ->
+                                when (id) {
+                                    "alternate_search" -> onAlternateSearch()
+                                    "add_remote" -> onNavigateToRemoteImport()
+                                    "add_local" -> onNavigateToLocalImport()
+                                    "update_toc" -> onIntent(BookshelfIntent.RefreshToc(uiState.items))
+                                    "layout" -> onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.ConfigSheet))
+                                    "group_manage" -> onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.GroupManageSheet))
+                                    "add_url" -> onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.AddUrlDialog))
+                                    "selection_mode" -> toggleEditMode()
+                                    "bookshelf_management" -> {
+                                        val groupId =
+                                            uiState.groups.getOrNull(uiState.selectedGroupIndex)?.groupId ?: -1L
+                                        onNavigateToCache(groupId)
+                                    }
+                                    "export" -> onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.ExportSheet))
+                                    "import" -> onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.ImportSheet))
+                                    "log" -> onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.LogSheet))
+                                }
+                            },
+                        ) {
+                            AppIcon(
+                                imageVector = AppIcons.MoreVert,
+                                contentDescription = stringResource(R.string.more_menu),
+                                modifier = this.modifier,
+                            )
+                        }
+                    }
+                },
+                bottomContent = {
+                    if (bookGroupStyle == 0 && uiState.groups.isNotEmpty()) {
+                        val selectedTabIndex = pagerState.currentPage.coerceIn(uiState.groups.indices)
+                        val tabTitles = remember(uiState.groups) { uiState.groups.map { it.groupName } }
+                        AppTabRow(
+                            tabTitles = tabTitles,
+                            selectedTabIndex = selectedTabIndex,
+                            onTabSelected = { index ->
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            },
+                            horizontalPadding = 12.dp,
+                            trailingAction = if (uiState.settings.shouldShowExpandButton) {
+                                {
+                                    val pagerGroups = uiState.groups
+                                    Box {
+                                        AppTabRowIconButton(
+                                            checked = showGroupMenu,
+                                            onClick = {
+                                                if (showGroupMenu) {
+                                                    onIntent(BookshelfIntent.DismissOverlay)
+                                                } else {
+                                                    onIntent(
+                                                        BookshelfIntent.ShowOverlay(BookshelfOverlay.GroupMenu)
+                                                    )
+                                                }
+                                            },
+                                            icon = Icons.AutoMirrored.Filled.FormatListBulleted,
+                                            contentDescription = stringResource(R.string.group_manage),
+                                        )
+                                        BookshelfGroupMenu(
+                                            groups = pagerGroups,
+                                            currentGroupId = currentMenuGroupId,
+                                            expanded = showGroupMenu,
+                                            modifier = Modifier.matchParentSize(),
+                                            onDismiss = {
+                                                onIntent(BookshelfIntent.DismissOverlay)
+                                            },
+                                            onSelect = { group ->
+                                                val index = pagerGroups.indexOfFirst {
+                                                    it.groupId == group.groupId
+                                                }
+                                                if (uiState.isSearch) {
+                                                    onIntent(
+                                                        BookshelfIntent.ChangeGroup(group.groupId)
+                                                    )
+                                                }
+                                                if (index >= 0) {
+                                                    scope.launch {
+                                                        pagerState.animateScrollToPage(index)
+                                                    }
+                                                }
+                                            },
+                                            extraGroups = if (uiState.isSearch) {
+                                                bookshelfSearchMenuGroups(uiState.allGroups)
+                                            } else {
+                                                emptyList()
+                                            },
+                                        )
+                                    }
+                                }
+                            } else null,
+                        )
+                    }
+                }
+            )
+        },
+        overlay = {
+            BookshelfSelectionOverlay(
+                uiState = uiState,
+                onIntent = onIntent,
+                onExitEditMode = exitEditMode,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { selectionOverlayHeight = with(density) { it.height.toDp() } },
+            )
+        },
+    ) { paddingValues ->
+        val bottomOverlayPadding = hostBottomOverlayPadding.coerceAtLeast(selectionOverlayHeight + 8.dp)
+        // uiState 是普通参数而不是快照状态：用 remember { derivedStateOf { … } } 会把首次
+        // 组合时的 uiState 永久缓存下来，之后分组开关（enableRefresh）改了也读不到，
+        // 于是"允许下拉刷新"关掉后依然能下拉。这里直接读取，随重组刷新即可。
+        val currentGroup = if (uiState.isSearch) {
+            uiState.allGroups.firstOrNull { it.groupId == currentGroupId }
+        } else {
+            uiState.groups.getOrNull(pagerState.settledPage)
+        }
+        val pullToRefreshEnabled = (currentGroup?.enableRefresh ?: true) && !isEditMode
+
+        Box(Modifier.fillMaxSize()) {
+            AppPullToRefresh(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = { onIntent(BookshelfIntent.RefreshBooks(uiState.items)) },
+                enabled = pullToRefreshEnabled,
+                topPadding = paddingValues.calculateTopPadding(),
+                scrollBehavior = scrollBehavior
+            ) {
+                folderTransition.AnimatedContent(
+                transitionSpec = {
+                    val easing = FastOutSlowInEasing
+                    val duration = 480
+                    if (targetState) {
+                        (fadeIn(animationSpec = tween(duration, easing = easing)) +
+                                scaleIn(
+                                    initialScale = 1.2f,
+                                    animationSpec = tween(duration, easing = easing)
+                                ))
+                            .togetherWith(fadeOut(animationSpec = tween(duration, easing = easing)) +
+                                    scaleOut(
+                                        targetScale = 0.8f,
+                                        animationSpec = tween(duration, easing = easing)
+                                    )
+                            )
+                    } else {
+                        (fadeIn(animationSpec = tween(duration, easing = easing)) +
+                                scaleIn(
+                                    initialScale = 0.8f,
+                                    animationSpec = tween(duration, easing = easing)
+                                ))
+                            .togetherWith(fadeOut(animationSpec = tween(duration, easing = easing)) +
+                                    scaleOut(
+                                        targetScale = 1.2f,
+                                        animationSpec = tween(duration, easing = easing)
+                                    )
+                            )
+                    }
+                }
+            ) { isRoot ->
+                if (uiState.groups.isEmpty() && !uiState.isSearch) {
+                    if (!uiState.isInitialLoading) {
+                        EmptyMessage(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    top = paddingValues.calculateTopPadding(),
+                                    bottom = 120.dp.coerceAtLeast(bottomOverlayPadding)
+                                ),
+                            messageResId = R.string.bookshelf_empty
+                        )
+                    }
+                } else if (bookGroupStyle == 2 && isRoot && !isUsingStandaloneSearchGroup) {
+                    val folderColumns =
+                        if (bookshelfFolderLayoutMode == 0) bookshelfFolderLayoutList else bookshelfFolderLayoutGrid
+                    val isGridMode = bookshelfFolderLayoutMode != 0
+                    // 分组网格与书籍网格共用同一套尺寸开关，避免同一开关在两层页面表现不一致
+                    val folderCells = if (isGridMode && !uiState.settings.bookshelfGridFixedColumns) {
+                        GridCells.Adaptive(minSize = (uiState.settings.bookshelfGridCoverWidth + 8).dp)
+                    } else {
+                        GridCells.Fixed(folderColumns.coerceAtLeast(1))
+                    }
+                    FastScrollLazyVerticalGrid(
+                        columns = folderCells,
+                        state = folderGridState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                with(sharedTransitionScope) {
+                                    if (this != null) Modifier.skipToLookaheadSize() else Modifier
+                                }
+                            ),
+                        contentPadding = adaptiveContentPaddingBookshelf(
+                            top = paddingValues.calculateTopPadding(),
+                            bottom = (if (uiState.useRaisedBottomInset) 120.dp else 8.dp)
+                                .coerceAtLeast(bottomOverlayPadding),
+                            horizontal = 4.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(if (isGridMode) 8.dp else 0.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (isGridMode) 8.dp else 0.dp),
+                        showFastScroll = uiState.settings.showBookshelfFastScroller
+                    ) {
+                        itemsIndexed(
+                            uiState.groups,
+                            key = { _, it -> it.groupId }) { index, group ->
+                            // 私密分组在文件夹根目录也不露出预览封面与书籍数量
+                            val groupLocked = uiState.isGroupLocked(group)
+                            val countText = if (uiState.settings.showBookCount && !groupLocked) {
+                                uiState.groupBookCounts[group.groupId]?.let {
+                                    stringResource(R.string.book_count, it)
+                                }
+                            } else {
+                                null
+                            }
+                            val previewBooks = if (groupLocked) {
+                                emptyList()
+                            } else {
+                                uiState.groupPreviews[group.groupId] ?: emptyList()
+                            }
+                            if (bookshelfFolderLayoutMode == 0) {
+                                BookGroupItemList(
+                                    settings = uiState.settings,
+                                    group = group,
+                                    previewBooks = previewBooks,
+                                    countText = countText,
+                                    isCompact = uiState.settings.bookshelfLayoutCompact,
+                                    titleMaxLines = uiState.settings.bookshelfTitleMaxLines,
+                                    coverShadow = uiState.settings.bookshelfCoverShadow,
+                                    onClick = {
+                                        scope.launch { pagerState.scrollToPage(index) }
+                                        onIntent(BookshelfIntent.SetInFolderRoot(false))
+                                    },
+                                    onLongClick = {
+                                        onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.GroupEditSheet(group.groupId)))
+                                    },
+                                    onBookClick = { book -> openBook(book, null) }
+                                )
+                            } else {
+                                BookGroupItemGrid(
+                                    settings = uiState.settings,
+                                    group = group,
+                                    previewBooks = previewBooks,
+                                    countText = countText,
+                                    gridStyle = uiState.settings.bookshelfGridLayout,
+                                    titleSmallFont = uiState.settings.bookshelfTitleSmallFont,
+                                    titleCenter = uiState.settings.bookshelfTitleCenter,
+                                    titleMaxLines = uiState.settings.bookshelfTitleMaxLines,
+                                    coverShadow = uiState.settings.bookshelfCoverShadow,
+                                    onClick = {
+                                        scope.launch { pagerState.scrollToPage(index) }
+                                        onIntent(BookshelfIntent.SetInFolderRoot(false))
+                                    },
+                                    onLongClick = {
+                                        onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.GroupEditSheet(group.groupId)))
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // 注意：锁定态只替换"某个分组自己的内容区"，不能替换整个分页容器，
+                    // 否则用户会被卡在锁定页里、连相邻分组都切不过去。
+                    if (isUsingStandaloneSearchGroup) {
+                        if (uiState.selectedGroupLocked) {
+                            PrivateGroupLockedPage(
+                                groupId = uiState.selectedGroupId,
+                                uiState = uiState,
+                                onIntent = onIntent
+                            )
+                        } else {
+                            BookshelfPage(
+                                gridState = standaloneSearchGridState,
+                                paddingValues = paddingValues,
+                                bottomOverlayPadding = bottomOverlayPadding,
+                                books = uiState.items,
+                                uiState = uiState,
+                                selectedBookUrls = selectedBookUrls,
+                                canReorderBooks = false,
+                                onToggleBookSelection = { toggleBookSelection(it.book.bookUrl) },
+                                draggingBooks = null,
+                                pendingSavedBooks = null,
+                                onDragStarted = {},
+                                onMoveBook = { _, _, _ -> },
+                                onDragFinished = {},
+                                onGlobalSearch = { onNavigateToSearch(uiState.searchKey.trim()) },
+                                onBookClick = openBook,
+                                onBookLongClick = onBookLongClick,
+                                onLockedBookClick = requestBookUnlock,
+                                isCurrentPage = true,
+                                sharedCoverGroupId = currentGroupId,
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                            )
+                        }
+                    } else {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    with(sharedTransitionScope) {
+                                        if (this != null) Modifier.skipToLookaheadSize() else Modifier
+                                    }
+                                ),
+                            beyondViewportPageCount = 0,
+                            key = { if (it < uiState.groups.size) uiState.groups[it].groupId else it }
+                        ) { pageIndex ->
+                            val group = uiState.groups.getOrNull(pageIndex)
+                            if (group != null) {
+                                // 锁定 ↔ 解锁之间交叉淡化。只锁这个分组的内容区，
+                                // 左右相邻分组仍可正常滑动切换。
+                                Crossfade(
+                                    targetState = uiState.isGroupLocked(group),
+                                    animationSpec = tween(220),
+                                ) { locked ->
+                                    if (locked) {
+                                        PrivateGroupLockedPage(
+                                            groupId = group.groupId,
+                                            uiState = uiState,
+                                            onIntent = onIntent
+                                        )
+                                    } else {
+                                        val isSelectedGroup =
+                                            group.groupId == uiState.selectedGroupId
+                                        val books = uiState.visibleGroupBooks[group.groupId]
+                                            ?: persistentListOf()
+                                        val canReorderBooks = isEditMode &&
+                                                !uiState.isSearch &&
+                                                (group.bookSort.takeIf { it >= 0 }
+                                                    ?: uiState.bookshelfSort) == 3 &&
+                                                isSelectedGroup
+                                        BookshelfPage(
+                                            gridState = groupGridStates.getValue(group.groupId),
+                                            paddingValues = paddingValues,
+                                            bottomOverlayPadding = bottomOverlayPadding,
+                                            books = books,
+                                            uiState = uiState,
+                                            selectedBookUrls = selectedBookUrls,
+                                            canReorderBooks = canReorderBooks,
+                                            onToggleBookSelection = { toggleBookSelection(it.book.bookUrl) },
+                                            draggingBooks = if (isSelectedGroup) {
+                                                uiState.draggingBooks
+                                            } else {
+                                                null
+                                            },
+                                            pendingSavedBooks = if (isSelectedGroup) {
+                                                uiState.pendingSavedBooks
+                                            } else {
+                                                null
+                                            },
+                                            onDragStarted = {
+                                                if (isSelectedGroup) onIntent(
+                                                    BookshelfIntent.StartDragging(
+                                                        it
+                                                    )
+                                                )
+                                            },
+                                            onMoveBook = { from, to, currentBooks ->
+                                                if (isSelectedGroup) {
+                                                    onIntent(
+                                                        BookshelfIntent.MoveDragging(
+                                                            from,
+                                                            to,
+                                                            currentBooks
+                                                        )
+                                                    )
+                                                }
+                                            },
+                                            onDragFinished = {
+                                                if (isSelectedGroup) onIntent(BookshelfIntent.FinishDragging)
+                                            },
+                                            onGlobalSearch = { onNavigateToSearch(uiState.searchKey.trim()) },
+                                            onBookClick = openBook,
+                                            onBookLongClick = onBookLongClick,
+                                            onLockedBookClick = requestBookUnlock,
+                                            isCurrentPage = isSelectedGroup,
+                                            sharedCoverGroupId = group.groupId,
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            }
+
+            TopFloatingStickyItem(
+                item = editStickySummary,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = paddingValues.calculateTopPadding() + 6.dp),
+            ) { summary ->
+                Box {
+                    NormalCard(
+                        cornerRadius = 32.dp,
+                        containerColor = LegadoTheme.colorScheme.surfaceContainer,
+                        contentColor = LegadoTheme.colorScheme.onCardContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppText(
+                                text = stringResource(
+                                    R.string.bookshelf_selected_count,
+                                    summary.selectedCount
+                                ),
+                                style = LegadoTheme.typography.labelSmallEmphasized
+                            )
+                            AppText(
+                                text = " · ${
+                                    stringResource(
+                                        R.string.bookshelf_total_count,
+                                        summary.currentGroupTotalCount
+                                    )
+                                }",
+                                style = LegadoTheme.typography.labelSmallEmphasized
+                            )
+                            if (!summary.groupName.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                TextCard(
+                                    text = summary.groupName,
+                                    textStyle = LegadoTheme.typography.labelSmallEmphasized,
+                                    backgroundColor = LegadoTheme.colorScheme.surfaceContainerHighest,
+                                    cornerRadius = 16.dp,
+                                    verticalPadding = 8.dp,
+                                    horizontalPadding = 12.dp,
+                                    modifier = Modifier.semantics {
+                                        role = Role.Button
+                                    },
+                                    onClick = {
+                                        onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.GroupMenu))
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+
+                    BookshelfGroupMenu(
+                        groups = uiState.groups,
+                        currentGroupId = currentMenuGroupId,
+                        expanded = showGroupMenu,
+                        modifier = Modifier.matchParentSize(),
+                        onDismiss = { onIntent(BookshelfIntent.DismissOverlay) },
+                        onSelect = { group ->
+                            val targetIndex =
+                                uiState.groups.indexOfFirst { it.groupId == group.groupId }
+                            if (targetIndex >= 0) {
+                                scope.launch {
+                                    if (pagerState.currentPage != targetIndex) {
+                                        pagerState.animateScrollToPage(targetIndex)
+                                    }
+                                }
+                            }
+                            if (uiState.isSearch ||
+                                uiState.selectedGroupId != group.groupId
+                            ) {
+                                onIntent(BookshelfIntent.ChangeGroup(group.groupId))
+                            }
+                            if (bookGroupStyle == 2) {
+                                onIntent(BookshelfIntent.SetInFolderRoot(false))
+                            }
+                        },
+                    )
+                }
+            }
+
+        }
+    }
+
+    BookshelfOverlays(
+        activeOverlay = activeOverlay,
+        uiState = uiState,
+        onIntent = onIntent,
+        allGroups = allGroups,
+        selectedBookUrls = selectedBookUrls,
+        importLauncher = importLauncher,
+        exportLauncher = exportLauncher,
+        clearSelection = clearSelection
+    )
+}
+
+private const val BookshelfGroupMenuIdPrefix = "group:"
+
+/**
+ * 书架分组切换菜单（顶栏分组按钮与编辑态分组胶囊两处入口共用）。
+ *
+ * 受控模式：开合由 `BookshelfOverlay.GroupMenu` 统一持有，这里只渲染弹层，锚点取调用方给的容器，
+ * 因此两处都必须在外面留一个有尺寸的 `Box`。当前分组用 `AppAction.selected` 表达；
+ * 原菜单里的「全部 / 隐藏」标题按口径降级为组间分段线（第二组存在时才画线）。
+ *
+ * 两处入口的点击语义略有差别（编辑态那处还要退回复层、改分组），所以选中后的动作由
+ * [onSelect] 交给调用方，本组件只负责把 `group:<id>` 还原成 [BookGroupUi]。
+ */
+@Composable
+private fun BookshelfGroupMenu(
+    groups: List<BookGroupUi>,
+    currentGroupId: Long,
+    expanded: Boolean,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
+    onSelect: (BookGroupUi) -> Unit,
+    extraGroups: List<BookGroupUi> = emptyList(),
+) {
+    val all = groups + extraGroups
+    val menuGroups = persistentListOf(
+        AppActionGroup(
+            id = "bookshelf_groups",
+            actions = groups.map { group ->
+                AppAction(
+                    id = "$BookshelfGroupMenuIdPrefix${group.groupId}",
+                    label = group.groupName,
+                    selected = currentGroupId == group.groupId,
+                )
+            }.toImmutableList(),
+        ),
+        AppActionGroup(
+            id = "bookshelf_hidden_groups",
+            actions = extraGroups.map { group ->
+                AppAction(
+                    id = "$BookshelfGroupMenuIdPrefix${group.groupId}",
+                    label = group.groupName,
+                    selected = currentGroupId == group.groupId,
+                )
+            }.toImmutableList(),
+        ),
+    )
+    AppActionMenu(
+        groups = menuGroups,
+        onAction = { id ->
+            all.firstOrNull { "$BookshelfGroupMenuIdPrefix${it.groupId}" == id }
+                ?.let(onSelect)
+        },
+        modifier = modifier,
+        embeddedExpanded = expanded,
+        onDismissRequest = onDismiss,
+        trigger = {},
+    )
+}
+
+/** 搜索态的第二组：`全部` + 已隐藏的分组。 */
+private fun bookshelfSearchMenuGroups(allGroups: List<BookGroupUi>): List<BookGroupUi> =
+    listOfNotNull(allGroups.firstOrNull { it.groupId == BookGroup.IdAll }) +
+        allGroups.filter { !it.show && it.groupId != BookGroup.IdAll }
+
+internal fun toggleBookshelfFilter(
+    isSearch: Boolean,
+    selectedGroupId: Long,
+    currentTabGroupId: Long,
+    onIntent: (BookshelfIntent) -> Unit,
+) {
+    val active = !isSearch
+    onIntent(BookshelfIntent.SetSearchMode(active))
+    if (!active && selectedGroupId != currentTabGroupId) {
+        onIntent(BookshelfIntent.ChangeGroup(currentTabGroupId))
+    }
+}
+
+@Composable
+internal fun BookshelfTopBar(
+    uiState: BookshelfUiState,
+    scrollBehavior: GlassTopAppBarScrollBehavior,
+    isContentScrolled: Boolean,
+    onSearchClick: () -> Unit,
+    onSearchLongClick: (() -> Unit)?,
+    onSearchQueryChange: (String) -> Unit,
+    onSearchSubmit: (String) -> Unit,
+    onClearSearch: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
+    bottomContent: @Composable ColumnScope.() -> Unit = {}
+) {
+    val searchContentDescription = stringResource(R.string.search)
+    val filterContentDescription = stringResource(R.string.bookshelf_filter)
+    val searchFirst = uiState.settings.bookshelfSearchActionDirectToSearch
+    GlassMediumFlexibleTopAppBar(
+        modifier = Modifier.fillMaxWidth(),
+        title = if (uiState.isLoading) {
+            stringResource(R.string.loading)
+        } else {
+            uiState.title.ifEmpty { stringResource(R.string.bookshelf) }
+        },
+        useCharMode = uiState.isLoading,
+        subtitle = uiState.subtitle,
+        scrollBehavior = scrollBehavior,
+        isContentScrolled = isContentScrolled,
+        actions = {
+            TopBarActionButton(
+                onClick = onSearchClick,
+                onLongClick = onSearchLongClick,
+                onLongClickLabel = if (searchFirst) filterContentDescription else searchContentDescription,
+                imageVector = AppIcons.Search,
+                contentDescription = if (searchFirst) searchContentDescription else filterContentDescription,
+            )
+            actions()
+        },
+        bottomContent = {
+            AnimatedVisibility(
+                modifier = Modifier.adaptiveHorizontalPadding(),
+                visible = uiState.isSearch,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                SearchBar(
+                    query = uiState.searchKey,
+                    onQueryChange = onSearchQueryChange,
+                    onSearch = onSearchSubmit,
+                    onClear = onClearSearch,
+                )
+            }
+            bottomContent()
+        }
+    )
+}
+
+@Composable
+internal fun BookshelfSelectionOverlay(
+    uiState: BookshelfUiState,
+    onIntent: (BookshelfIntent) -> Unit,
+    onExitEditMode: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hostBottomOverlayPadding = LocalBottomOverlayPadding.current
+    Box(modifier) {
+        AnimatedVisibility(
+            visible = uiState.isEditMode,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+        ) {
+            BookshelfSelectionBar(
+                uiState = uiState,
+                onIntent = onIntent,
+                onExitEditMode = onExitEditMode,
+                // 父级浮动导航的留白已包含它实际使用的系统底部 inset。
+                modifier = Modifier
+                    .padding(bottom = hostBottomOverlayPadding + 16.dp)
+                    .consumeWindowInsets(PaddingValues(bottom = hostBottomOverlayPadding)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookshelfSelectionBar(
+    uiState: BookshelfUiState,
+    onIntent: (BookshelfIntent) -> Unit,
+    onExitEditMode: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedBookUrls = uiState.selectedBookUrls
+    val hasSelection = selectedBookUrls.isNotEmpty()
+    val download = if (hasSelection) {
+        ActionItem(stringResource(R.string.action_download), Icons.Default.Download) {
+            onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.BatchDownloadConfirmDialog))
+        }
+    } else null
+    val secondaryActions = buildList {
+        if (hasSelection) {
+            add(ActionItem(stringResource(R.string.move_to_group)) {
+                onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.GroupSelectSheet))
+            })
+            if (uiState.privateAccess.hasPassword) {
+                val makePrivate = uiState.items.none { it.isPrivate && it.book.bookUrl in selectedBookUrls }
+                val label = if (makePrivate) R.string.private_mark_book else R.string.private_unmark_book
+                add(ActionItem(stringResource(label)) {
+                    onIntent(BookshelfIntent.SetBooksPrivate(selectedBookUrls, makePrivate))
+                })
+            }
+            add(ActionItem(stringResource(R.string.delete_selected)) {
+                onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.DeleteBooksConfirmDialog))
+            })
+        }
+    }
+    SelectionBottomBar(
+        modifier = modifier,
+        onSelectAll = { onIntent(BookshelfIntent.SelectAllVisible) },
+        onSelectInvert = { onIntent(BookshelfIntent.InvertVisibleSelection) },
+        primaryAction = ActionItem(
+            text = stringResource(R.string.cancel_select),
+            icon = AppIcons.Close,
+            onClick = onExitEditMode,
+        ),
+        secondaryActions = secondaryActions,
+        leadingAction = download,
+    )
+}
+
+@Composable
+private fun BookshelfOverlays(
+    activeOverlay: BookshelfOverlay?,
+    uiState: BookshelfUiState,
+    onIntent: (BookshelfIntent) -> Unit,
+    allGroups: List<BookGroup>,
+    selectedBookUrls: Set<String>,
+    importLauncher: ManagedActivityResultLauncher<Array<String>, Uri?>,
+    exportLauncher: ManagedActivityResultLauncher<String, Uri?>,
+    clearSelection: () -> Unit
+) {
+    BookshelfConfigSheet(
+        show = activeOverlay == BookshelfOverlay.ConfigSheet,
+        settings = uiState.settings,
+        onUpdate = { onIntent(BookshelfIntent.UpdateSetting(it)) },
+        enableCustomTagColors = uiState.enableCustomTagColors,
+        customTagColors = uiState.customTagColors,
+        themeColor = uiState.themeColor,
+        onCustomTagColorsEnabledChange = {
+            onIntent(BookshelfIntent.SetCustomTagColorsEnabled(it))
+        },
+        onCustomTagColorsChange = {
+            onIntent(BookshelfIntent.SetCustomTagColors(it))
+        },
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) }
+    )
+
+    GroupManageSheet(
+        show = activeOverlay == BookshelfOverlay.GroupManageSheet,
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) }
+    )
+
+    // 应用内密码解锁：生物不可用、用户点了"使用密码"，或设备不支持时的统一兜底
+    if (activeOverlay is BookshelfOverlay.PrivatePassword) {
+        val target = activeOverlay.target
+        var password by remember(target) { mutableStateOf("") }
+        AppAlertDialog(
+            show = true,
+            onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+            title = stringResource(R.string.private_unlock_password_title),
+            content = {
+                AppTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = stringResource(R.string.private_unlock_password_title),
+                    backgroundColor = LegadoTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmText = stringResource(R.string.ok),
+            onConfirm = {
+                onIntent(BookshelfIntent.SubmitPrivatePassword(target, password))
+            },
+            dismissText = stringResource(R.string.cancel),
+            onDismiss = { onIntent(BookshelfIntent.DismissOverlay) },
+        )
+    }
+
+    if (activeOverlay is BookshelfOverlay.GroupEditSheet) {
+        val editGroup = allGroups.firstOrNull { it.groupId == activeOverlay.groupId }
+        if (editGroup != null) {
+            GroupEditSheet(
+                show = true,
+                group = editGroup,
+                onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) }
+            )
+        }
+    }
+
+    GroupSelectSheet(
+        show = activeOverlay == BookshelfOverlay.GroupSelectSheet,
+        groups = allGroups.filter { it.groupId > 0 },
+        currentGroupId = 0L,
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+        onConfirm = { groupId ->
+            onIntent(BookshelfIntent.MoveBooksToGroup(selectedBookUrls, groupId))
+            onIntent(BookshelfIntent.DismissOverlay)
+            clearSelection()
+        }
+    )
+
+    SourceInputDialog(
+        show = activeOverlay == BookshelfOverlay.AddUrlDialog,
+        title = stringResource(R.string.add_book_url),
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+        onConfirm = { url ->
+            onIntent(BookshelfIntent.AddBookByUrl(url))
+            onIntent(BookshelfIntent.DismissOverlay)
+        }
+    )
+
+    FilePickerSheet(
+        show = activeOverlay == BookshelfOverlay.ImportSheet,
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+        title = stringResource(R.string.import_bookshelf),
+        onSelectSysFile = { types ->
+            importLauncher.launch(types)
+            onIntent(BookshelfIntent.DismissOverlay)
+        },
+        onManualInput = {
+            onIntent(BookshelfIntent.ShowOverlay(BookshelfOverlay.AddUrlDialog))
+        },
+        allowExtensions = arrayOf("json", "txt")
+    )
+
+    FilePickerSheet(
+        show = activeOverlay == BookshelfOverlay.ExportSheet,
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+        title = stringResource(R.string.export_bookshelf),
+        onSelectSysDir = {
+            onIntent(BookshelfIntent.DismissOverlay)
+            exportLauncher.launch("bookshelf.json")
+        },
+        onUpload = {
+            onIntent(BookshelfIntent.DismissOverlay)
+            onIntent(BookshelfIntent.UploadBookshelf(uiState.items))
+        }
+    )
+
+    AppLogSheet(
+        show = activeOverlay == BookshelfOverlay.LogSheet,
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) }
+    )
+
+    AppAlertDialog(
+        show = activeOverlay == BookshelfOverlay.BatchDownloadConfirmDialog,
+        onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+        title = stringResource(R.string.draw),
+        text = stringResource(R.string.sure_cache_book),
+        confirmText = stringResource(android.R.string.ok),
+        onConfirm = {
+            onIntent(BookshelfIntent.DismissOverlay)
+            onIntent(BookshelfIntent.DownloadBooks(selectedBookUrls))
+        },
+        dismissText = stringResource(android.R.string.cancel),
+        onDismiss = { onIntent(BookshelfIntent.DismissOverlay) }
+    )
+
+    if (activeOverlay == BookshelfOverlay.DeleteBooksConfirmDialog) {
+        // 勾选态只活在这次弹窗里：每次打开都从"不删源文件"起步
+        var deleteOriginal by remember { mutableStateOf(false) }
+        val hasLocalBook = remember(uiState.items, selectedBookUrls) {
+            uiState.items.any { it.book.isLocal && it.book.bookUrl in selectedBookUrls }
+        }
+        AppAlertDialog(
+            show = true,
+            onDismissRequest = { onIntent(BookshelfIntent.DismissOverlay) },
+            title = stringResource(R.string.delete_selected),
+            text = stringResource(R.string.bookshelf_selected_count, selectedBookUrls.size),
+            content = {
+                if (hasLocalBook) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppCheckbox(
+                            checked = deleteOriginal,
+                            onCheckedChange = { deleteOriginal = it }
+                        )
+                        AppText(
+                            text = stringResource(R.string.delete_book_file),
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmText = stringResource(R.string.delete),
+            onConfirm = {
+                onIntent(BookshelfIntent.DeleteBooks(selectedBookUrls, deleteOriginal))
+                onIntent(BookshelfIntent.DismissOverlay)
+            },
+            dismissText = stringResource(R.string.cancel),
+            onDismiss = { onIntent(BookshelfIntent.DismissOverlay) }
+        )
+    }
+
+    val loadingDescription = uiState.loadingText ?: stringResource(R.string.loading)
+    AppAlertDialog(
+        show = uiState.isLoading,
+        onDismissRequest = {},
+        content = {
+            Column(
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = loadingDescription },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AppCircularProgressIndicator()
+                uiState.loadingText?.let {
+                    AppText(
+                        text = it,
+                        modifier = Modifier.padding(top = 16.dp),
+                        style = LegadoTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+    )
+}
+
+internal data class BookshelfEditStickySummary(
+    val selectedCount: Int,
+    val currentGroupTotalCount: Int,
+    val groupName: String?,
+)
+
+/**
+ * 编辑态吸顶条只在分组标签栏隐藏时出现。
+ *
+ * `bookGroupStyle == 0`（Tab）会渲染 AppTabRow，编辑态的「已选 / 共」也已在 TopBar
+ * subtitle，此时吸顶条是重复信息；Hide Tab / Folder 没有标签栏，才需要它提供组名与
+ * 分组菜单入口，TopBar 副标题同时留空。标签可见时的分组菜单由 AppTabRow 的
+ * trailingAction 提供，功能不会丢失。承载规则见 `bookshelfEditInfoUsesSticky`。
+ */
+internal fun buildBookshelfEditSticky(
+    isEditMode: Boolean,
+    bookGroupStyle: Int,
+    selectedCount: Int,
+    currentGroupTotalCount: Int,
+    groupName: String?,
+): BookshelfEditStickySummary? = if (!bookshelfEditInfoUsesSticky(isEditMode, bookGroupStyle)) {
+    null
+} else {
+    BookshelfEditStickySummary(selectedCount, currentGroupTotalCount, groupName)
+}
+
+/**
+ * 私密分组的锁定态内容区。
+ *
+ * 只替换"这个分组自己的内容"，不动分页容器——否则用户会被卡在锁定页里，
+ * 连相邻分组都切不过去。提示块复用 [PrivateLockedPage]，与详情页脱敏态是同一套呈现。
+ */
+@Composable
+private fun PrivateGroupLockedPage(
+    groupId: Long,
+    uiState: BookshelfUiState,
+    onIntent: (BookshelfIntent) -> Unit,
+) {
+    PrivateLockedPage(
+        title = stringResource(R.string.private_locked_group_title),
+        description = stringResource(
+            if (uiState.privateAccess.hasPassword) {
+                R.string.private_locked_group_desc
+            } else {
+                R.string.private_content_no_password
+            }
+        ),
+        actionText = stringResource(
+            if (uiState.privateAccess.hasPassword) {
+                R.string.private_verify_and_view
+            } else {
+                R.string.set_local_password
+            }
+        ),
+        onAction = {
+            onIntent(BookshelfIntent.RequestPrivateUnlock(PrivateUnlockTarget.Group(groupId)))
+        }
+    )
+}
+
+@Composable
+fun BookshelfPage(
+    gridState: LazyGridState,
+    paddingValues: PaddingValues,
+    bottomOverlayPadding: Dp,
+    books: ImmutableList<BookUiItem>,
+    uiState: BookshelfUiState,
+    selectedBookUrls: ImmutableSet<String>,
+    canReorderBooks: Boolean,
+    onToggleBookSelection: (BookUiItem) -> Unit,
+    draggingBooks: ImmutableList<BookUiItem>?,
+    pendingSavedBooks: ImmutableList<BookUiItem>?,
+    onDragStarted: (ImmutableList<BookUiItem>) -> Unit,
+    onMoveBook: (fromIndex: Int, toIndex: Int, currentBooks: ImmutableList<BookUiItem>) -> Unit,
+    onDragFinished: () -> Unit,
+    onGlobalSearch: () -> Unit,
+    onBookClick: (BookShelfItem, String?) -> Unit,
+    onBookLongClick: (BookShelfItem, String?) -> Unit,
+    /** 点击处于脱敏状态的私密书籍：请求验证，验证通过后自动打开阅读 */
+    onLockedBookClick: (String) -> Unit = {},
+    isCurrentPage: Boolean = true,
+    sharedCoverGroupId: Long,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+) {
+    if (books.isEmpty()) {
+        if (!isCurrentPage) return
+        if (uiState.isSearch) {
+            EmptyMessage(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = paddingValues.calculateTopPadding(),
+                        bottom = 120.dp.coerceAtLeast(bottomOverlayPadding)
+                    ),
+                message = stringResource(R.string.bookshelf_empty_global_search),
+                buttonText = stringResource(R.string.global_search),
+                onButtonClick = onGlobalSearch
+            )
+        } else if (!uiState.isInitialLoading) {
+            EmptyMessage(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = paddingValues.calculateTopPadding(),
+                        bottom = 120.dp.coerceAtLeast(bottomOverlayPadding)
+                    ),
+                messageResId = R.string.bookshelf_empty
+            )
+        }
+        return
+    }
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val bookshelfLayoutMode = if (isLandscape) {
+        uiState.settings.bookshelfLayoutModeLandscape
+    } else {
+        uiState.settings.bookshelfLayoutModePortrait
+    }
+    val bookshelfLayoutGrid = if (isLandscape) {
+        uiState.settings.bookshelfLayoutGridLandscape
+    } else {
+        uiState.settings.bookshelfLayoutGridPortrait
+    }
+    val bookshelfLayoutList = if (isLandscape) {
+        uiState.settings.bookshelfLayoutListLandscape
+    } else {
+        uiState.settings.bookshelfLayoutListPortrait
+    }
+    val columns = if (bookshelfLayoutMode == 0) bookshelfLayoutList else bookshelfLayoutGrid
+    val isGridMode = bookshelfLayoutMode != 0
+    // 关闭「固定列数」时列数由封面宽度推出：单元格最小宽度 = 封面 + 左右各 4dp 内边距。
+    val gridCells = if (isGridMode && !uiState.settings.bookshelfGridFixedColumns) {
+        GridCells.Adaptive(minSize = (uiState.settings.bookshelfGridCoverWidth + 8).dp)
+    } else {
+        GridCells.Fixed(columns.coerceAtLeast(1))
+    }
+    val bookItemGridStyle = uiState.settings.bookshelfGridLayout
+    val bookItemIsCompact = uiState.settings.bookshelfLayoutCompact
+    val bookItemTitleSmallFont = uiState.settings.bookshelfTitleSmallFont
+    val bookItemTitleCenter = uiState.settings.bookshelfTitleCenter
+    val bookItemTitleMaxLines = uiState.settings.bookshelfTitleMaxLines
+    val bookItemCoverShadow = uiState.settings.bookshelfCoverShadow
+    val showFastScroll = uiState.settings.showBookshelfFastScroller
+    val listContentDescription = stringResource(R.string.bookshelf)
+    val totalHorizontalPadding =
+        if (LegadoTheme.composeEngine == ComposeEngine.Miuix) 12.dp else 16.dp
+    val gridContentHorizontalPadding = totalHorizontalPadding / 2
+    val gridInnerHorizontalPadding = totalHorizontalPadding / 2
+    val hapticFeedback = LocalHapticFeedback.current
+    val displayBooks = draggingBooks ?: pendingSavedBooks ?: books
+    val reorderableState = rememberReorderableLazyGridState(gridState) { from, to ->
+        if (canReorderBooks) {
+            onMoveBook(from.index, to.index, displayBooks)
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+        }
+    }
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            onDragFinished()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                with(sharedTransitionScope) {
+                    if (this != null) Modifier.skipToLookaheadSize() else Modifier
+                }
+            )
+    ) {
+        FastScrollLazyVerticalGrid(
+            columns = gridCells,
+            state = gridState,
+            modifier = Modifier
+                .fillMaxSize()
+                .semantics {
+                    contentDescription = listContentDescription
+                    testTagsAsResourceId = true
+                }
+                .testTag("bookshelf_list")
+                .then(
+                    with(sharedTransitionScope) {
+                        if (this != null) Modifier.skipToLookaheadSize() else Modifier
+                    }
+                ),
+            contentPadding = adaptiveContentPaddingBookshelf(
+                top = paddingValues.calculateTopPadding(),
+                bottom = (if (uiState.useRaisedBottomInset) 120.dp else 8.dp)
+                    .coerceAtLeast(bottomOverlayPadding),
+                horizontal = 8.dp
+            ),
+            // 列表模式同样支持每行多本：卡片宽度被切分后，相邻卡片的边框会贴成一条线，
+            // 所以水平方向也要留间距，取与网格一致的 8dp（垂直方向由卡片自身 4dp 内边距提供）。
+            verticalArrangement = Arrangement.spacedBy(if (isGridMode) 8.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            showFastScroll = showFastScroll
+        ) {
+            itemsIndexed(displayBooks, key = { _, item -> item.book.bookUrl }) { index, bookUi ->
+                val isSelected = selectedBookUrls.contains(bookUi.book.bookUrl)
+                val sharedCoverKey = bookCoverSharedElementKey(
+                    bookUi.book.bookUrl,
+                    bookshelfSharedCoverSourceId(sharedCoverGroupId)
+                )
+                ReorderableItem(
+                    state = reorderableState,
+                    key = bookUi.book.bookUrl,
+                    enabled = canReorderBooks
+                ) { isDragging ->
+                    val bookLocked = uiState.isBookLocked(bookUi)
+                    // 锁定 ⇄ 解锁的过渡在 BookItem 内部完成：封面走模糊深度、文字走占位替换。
+                    // 不在这一层整体模糊，是因为整体 blur 会把封面圆角与阴影一起糊掉。
+                    BookItem(
+                        settings = uiState.settings,
+                        customTagColors = if (uiState.enableCustomTagColors) {
+                            uiState.customTagColors
+                        } else {
+                            persistentListOf()
+                        },
+                        bookUi = bookUi,
+                        modifier = Modifier
+                            .reorderAccessibility(
+                                index = index,
+                                itemCount = displayBooks.size,
+                                enabled = canReorderBooks,
+                            ) { from, to ->
+                                onDragStarted(displayBooks)
+                                onMoveBook(from, to, displayBooks)
+                                onDragFinished()
+                            }
+                            .then(
+                                if (canReorderBooks) {
+                                    Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            onDragStarted(displayBooks)
+                                            hapticFeedback.performHapticFeedback(
+                                                HapticFeedbackType.GestureThresholdActivate
+                                            )
+                                        },
+                                        onDragStopped = {
+                                            hapticFeedback.performHapticFeedback(
+                                                HapticFeedbackType.GestureEnd
+                                            )
+                                        }
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .graphicsLayer {
+                                alpha = if (isDragging) 0.5f else 1f
+                            },
+                        layoutMode = bookshelfLayoutMode,
+                        isSelected = isSelected,
+                        gridStyle = bookItemGridStyle,
+                        isCompact = bookItemIsCompact,
+                        isUpdating = uiState.updatingBooks.contains(bookUi.book.bookUrl),
+                        locked = bookLocked,
+                        titleSmallFont = bookItemTitleSmallFont,
+                        titleCenter = bookItemTitleCenter,
+                        titleMaxLines = bookItemTitleMaxLines,
+                        coverShadow = bookItemCoverShadow,
+                        isSearchMode = uiState.isSearch,
+                        searchKey = uiState.searchKey,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        sharedCoverKey = sharedCoverKey,
+                        onClick = {
+                            if (uiState.isEditMode) {
+                                onToggleBookSelection(bookUi)
+                            } else if (bookLocked) {
+                                onLockedBookClick(bookUi.book.bookUrl)
+                            } else {
+                                onBookClick(bookUi.book, sharedCoverKey)
+                            }
+                        },
+                        onLongClick = if (canReorderBooks) {
+                            null
+                        } else {
+                            {
+                                if (uiState.isEditMode) {
+                                    onToggleBookSelection(bookUi)
+                                } else {
+                                    // 长按一律进详情页：脱敏渲染在详情页内完成，
+                                    // 不给"长按只弹验证、进不去详情"的分叉
+                                    onBookLongClick(bookUi.book, sharedCoverKey)
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
