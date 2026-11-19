@@ -168,7 +168,7 @@ class SourceTest(unittest.TestCase):
         with patch.object(prepare, 'ROOT', self.recipe), self.assertRaises(subprocess.CalledProcessError):
             prepare.prepare(self.source, plan)
 
-    def test_matrix_products_produce_identical_source_bundle_and_recipe(self):
+    def test_matrix_products_produce_matching_source_commit_and_recipe(self):
         second = self.root / 'second'
         subprocess.run(['git', 'clone', '--shared', '-q', str(self.source), str(second)], check=True)
         outputs = []
@@ -180,8 +180,11 @@ class SourceTest(unittest.TestCase):
             output = self.root / f'out-{index}'
             packager.package(source, output, plan_file)
             outputs.append(output)
-        for name in ['patched-source.bundle', 'ireader-patches.zip']:
-            self.assertEqual((outputs[0] / name).read_bytes(), (outputs[1] / name).read_bytes())
+        plans = [json.loads((self.root / f'plan-{index}.json').read_text()) for index in range(2)]
+        self.assertEqual(plans[0], plans[1])
+        for output in outputs:
+            merger.verify_source_bundle(output / 'patched-source.bundle', plans[0]['source_commit'])
+        self.assertEqual((outputs[0] / 'ireader-patches.zip').read_bytes(), (outputs[1] / 'ireader-patches.zip').read_bytes())
 
     def test_snapshot_has_one_commit_and_exact_tree_without_workflows(self):
         with patch.object(prepare, 'ROOT', self.recipe):
@@ -203,9 +206,16 @@ class ArtifactTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        self.source = self.root / 'source'
+        self.source.mkdir()
+        self.git('init', '-q')
+        (self.source / 'file.txt').write_text('reproducible source\n' * 1000)
+        self.git('add', '.')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.org', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'snapshot')
+        self.git('branch', 'ireader-release')
         self.plan = dict(release_tag='3.26.23-ireader.1', upstream_tag='3.26.23',
                          upstream_url='https://example.org', application_id='app.reader',
-                         version_code=326023001, patch_revision=1, source_commit='a' * 40,
+                         version_code=326023001, patch_revision=1, source_commit=self.git('rev-parse', 'HEAD'),
                          certificate_sha256='b' * 64)
         for product in ['core', 'comic']:
             directory = self.root / ('ireader-build-' + product)
@@ -213,8 +223,38 @@ class ArtifactTest(unittest.TestCase):
             (directory / f'metadata-{product}.json').write_text(json.dumps({**self.plan, 'product': product}))
             for abi in ['universal', 'arm64-v8a', 'armeabi-v7a']:
                 (directory / f"legado-{self.plan['release_tag']}-{product}-{abi}.apk").write_bytes(product.encode())
-            for name in ['patched-source.bundle', 'ireader-patches.zip', f'mapping-{product}.txt']:
+            self.git('bundle', 'create', str(directory / 'patched-source.bundle'), 'refs/heads/ireader-release')
+            for name in ['ireader-patches.zip', f'mapping-{product}.txt']:
                 (directory / name).write_bytes(b'fixture')
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], cwd=self.source, text=True, stderr=subprocess.DEVNULL).strip()
+
+    def test_different_compression_of_identical_source_can_publish(self):
+        bundle = self.root / 'ireader-build-comic/patched-source.bundle'
+        bundle.unlink()
+        self.git('-c', 'pack.compression=0', 'bundle', 'create', str(bundle), 'refs/heads/ireader-release')
+        self.assertNotEqual(bundle.read_bytes(), (self.root / 'ireader-build-core/patched-source.bundle').read_bytes())
+        merger.merge(self.root, self.root / 'release')
+
+    def test_bundle_with_wrong_commit_or_corrupt_objects_cannot_publish(self):
+        bundle = self.root / 'ireader-build-comic/patched-source.bundle'
+        (self.source / 'file.txt').write_text('different source')
+        self.git('add', '.')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.org', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'different')
+        self.git('branch', '-f', 'ireader-release')
+        bundle.unlink()
+        self.git('bundle', 'create', str(bundle), 'refs/heads/ireader-release')
+        with self.assertRaises(ValueError):
+            merger.merge(self.root, self.root / 'release')
+        bundle.write_bytes(b'corrupt')
+        with self.assertRaises(subprocess.CalledProcessError):
+            merger.merge(self.root, self.root / 'release')
+
+    def test_different_recipe_cannot_publish(self):
+        (self.root / 'ireader-build-comic/ireader-patches.zip').write_bytes(b'different')
+        with self.assertRaises(ValueError):
+            merger.merge(self.root, self.root / 'release')
 
     def test_both_products_are_required_and_have_separate_mappings(self):
         output = self.root / 'release'

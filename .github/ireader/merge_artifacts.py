@@ -5,6 +5,24 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import tempfile
+
+
+def verify_source_bundle(bundle, expected_commit):
+    # Pack compression and object ordering may differ between runners. Verify
+    # the actual Git objects and root commit, rather than their archive bytes.
+    with tempfile.TemporaryDirectory() as temporary:
+        def git(*args):
+            return subprocess.check_output(['git', '-C', temporary, *args], text=True, stderr=subprocess.PIPE).strip()
+        git('init', '--bare', '-q')
+        git('fetch', '--quiet', str(bundle.resolve()), 'refs/heads/ireader-release')
+        if git('rev-parse', 'FETCH_HEAD') != expected_commit:
+            raise ValueError('Source bundle differs from recorded commit')
+        if git('rev-list', '--count', 'FETCH_HEAD') != '1' or git(
+            'ls-tree', '-r', '--name-only', 'FETCH_HEAD', '--', '.github/workflows'
+        ):
+            raise ValueError('Expected a standalone source snapshot without workflows')
 
 
 def merge(packages, output):
@@ -17,10 +35,11 @@ def merge(packages, output):
         metadata.append(item)
     if metadata[0] != metadata[1]:
         raise ValueError('Products differ in source, version or certificate')
-    for name in ['patched-source.bundle', 'ireader-patches.zip']:
-        if (packages / 'ireader-build-core' / name).read_bytes() != (packages / 'ireader-build-comic' / name).read_bytes():
-            raise ValueError('Product provenance differs: ' + name)
     plan = metadata[0]
+    for product in ['core', 'comic']:
+        verify_source_bundle(packages / ('ireader-build-' + product) / 'patched-source.bundle', plan['source_commit'])
+    if (packages / 'ireader-build-core/ireader-patches.zip').read_bytes() != (packages / 'ireader-build-comic/ireader-patches.zip').read_bytes():
+        raise ValueError('Product provenance differs: ireader-patches.zip')
     output.mkdir(parents=True, exist_ok=False)
     for product in ['core', 'comic']:
         directory = packages / ('ireader-build-' + product)
