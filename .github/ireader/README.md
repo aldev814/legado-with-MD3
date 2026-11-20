@@ -50,6 +50,7 @@ python3 .github/ireader/setup_signing.py --upload
 - `0001-smartos-water-ripple.patch`：正文水波纹与独立速度、扩展和装饰器，以及相关回归测试。
 - `0002-fork-identity.patch`：独立包名、更新仓库、正式证书与 Firebase 隔离。
 - `0005-upstream-325-verification.patch`：仅保留纯百分比格式的不可翻译声明。上游已经吸收的页脚测试、搜索资源入口和设置映射测试修正已移除，不再携带过期测试改写。
+- `0006-upstream-coui-search-api.patch`：在 COUI 搜索材质初始化时检查 Android 14 API，旧版系统使用现有搜索栏回退。上游吸收后移除此补丁。
 
 旧 Release 的源码与配方保持不变；当前配方针对新版统一菜单验证。
 
