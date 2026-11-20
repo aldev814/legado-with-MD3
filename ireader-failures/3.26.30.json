@@ -1,8 +1,0 @@
-{
-  "upstream_tag": "3.26.30",
-  "upstream_commit": "db3d401d96709affde39e2fa271d38650ff0f568",
-  "failed_steps": [
-    "Run unit tests, lint, architecture check and Release/R8 build"
-  ],
-  "run_url": "https://github.com/aldev814/legado-with-MD3/actions/runs/44667705939/attempts/1"
-}
