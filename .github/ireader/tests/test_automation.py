@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -17,6 +18,8 @@ def load(name):
 
 
 release = load('release')
+with patch.dict('sys.modules', release=release):
+    failure = load('record_failure')
 prepare = load('prepare_source')
 packager = load('package_source')
 signer = load('sign')
@@ -30,12 +33,14 @@ class PlanTest(unittest.TestCase):
         self.upstream = dict(tag_name='3.26.23', draft=False, prerelease=False,
                              published_at='2026-11-04T19:49:13Z', html_url='https://example.org/release')
 
-    def result(self, existing=None, upstream=None, requested=''):
+    def result(self, existing=None, upstream=None, requested='', blocked_tag=''):
         def get(route):
             if '/git/ref/' in route:
                 return {'object': {'type': 'commit', 'sha': 'b' * 40}}
             if route.startswith('repos/up/'):
                 return upstream or self.upstream
+            if '/contents/' in route:
+                return {} if route == f'repos/me/reader/contents/ireader-failures/{blocked_tag}.json?ref=update-manifests' else None
             return existing
         return release.plan(self.config, requested, get)
 
@@ -49,6 +54,15 @@ class PlanTest(unittest.TestCase):
     def test_published_release_is_skipped_but_draft_can_resume(self):
         self.assertEqual(self.result({'draft': False})['needed'], 'false')
         self.assertEqual(self.result({'draft': True})['needed'], 'true')
+
+    def test_failed_version_is_skipped_until_a_different_upstream_tag(self):
+        blocked = self.result(blocked_tag='3.26.23')
+        self.assertEqual((blocked['needed'], blocked['blocked']), ('false', 'true'))
+        self.config['patch_revision'] = 2
+        self.assertEqual(self.result(requested='3.26.23', blocked_tag='3.26.23')['needed'], 'false')
+        self.assertEqual(self.result(upstream={**self.upstream, 'tag_name': '3.26.24'}, blocked_tag='3.26.23')['needed'], 'true')
+        published = self.result(existing={'draft': False}, blocked_tag='3.26.23')
+        self.assertEqual((published['needed'], published['blocked']), ('false', 'false'))
 
     def test_revision_and_next_upstream_are_monotonic(self):
         tag, code = release.coordinates('3.26.23', 999)
@@ -88,6 +102,34 @@ class PlanTest(unittest.TestCase):
             return None
         self.assertEqual(release.plan(self.config, '3.26.23', get)['upstream_commit'], 'b' * 40)
         self.assertIn('releases/tags/3.26.23', calls[0])
+
+
+class FailureTest(unittest.TestCase):
+    def run_record(self, step, conclusion='failure', existing=False):
+        calls = []
+
+        def request(route, *, data=None):
+            if '/attempts/1/jobs' in route:
+                return {'jobs': [{'name': 'Build and verify (core)', 'steps': [{'name': step, 'conclusion': conclusion}]}]}
+            if data is None:
+                return {} if existing else None
+            calls.append((route, data))
+
+        failure.record('me/reader', '3.26.23', 'b' * 40, '123', '1', request)
+        return calls
+
+    def test_validation_failure_marks_tag_once(self):
+        for step in ['Apply patches (stop on any conflict)', 'Run unit tests, lint, architecture check and Release/R8 build']:
+            with self.subTest(step=step):
+                [(route, data)] = self.run_record(step)
+                self.assertEqual(route, 'repos/me/reader/contents/ireader-failures/3.26.23.json')
+                self.assertEqual(data['branch'], 'update-manifests')
+                self.assertEqual(json.loads(base64.b64decode(data['content']))['failed_steps'], [step])
+                self.assertEqual(self.run_record(step, existing=True), [])
+
+    def test_signing_failure_and_cancellation_do_not_mark(self):
+        self.assertEqual(self.run_record('Sign and verify product APKs and retain its R8 mapping'), [])
+        self.assertEqual(self.run_record('Apply patches (stop on any conflict)', conclusion='cancelled'), [])
 
 
 class SourceTest(unittest.TestCase):

@@ -10,13 +10,14 @@
 - Gradle wrapper 保持上游下载地址和 SHA256，下载超时调整为 120 秒、重试 3 次，避免首次冷下载的 10 秒超时。
 - 从检测时解析出的完整 commit SHA 检出上游，然后按顺序 `git apply --3way --index` 应用补丁；冲突即失败，不跳过补丁。
 - core/comic 分别运行 JDK 21、完整 Debug 单元测试、lint、架构检查和 Release/R8 构建。每个产品单独 runner，单 worker，Kotlin 堆上限 6GB。
+- `main` 上任一产品的补丁应用、构建准备或验证步骤失败时，在 `update-manifests` 分支的 `ireader-failures/<上游版本>.json` 记录失败步骤和运行链接。定时、推送及手动运行都会跳过该上游版本，新正式版本独立判断。
 - 用固定签名签署并验证六个 APK：每个产品各 universal、arm64-v8a、armeabi-v7a；校验包名、版本名、versionCode、证书和 16KB ZIP 对齐。
 - 两个产品必须具有相同源码、版本和签名，才创建 Release。附带两个产品各自的 R8 mapping、SHA256SUMS、构建元数据和补丁 ZIP。
 - 标签指向实际打补丁后的独立源码快照，不包含上游工作流或其历史。GitHub 的源码 ZIP 即该快照。
 - 已发布版本不覆盖、不强推标签；draft 可恢复。更新清单失败会在后续定时检查时重试。
-- 只有发布和更新清单任务拥有仓库写权限。构建任务只读，签名 Secrets 只传给签名步骤。
+- 只有失败记录、发布和更新清单任务拥有仓库写权限。构建任务只读，签名 Secrets 只传给签名步骤。
 
-配方分支 `codex/ireader-automation` 的 push 会完整构建验证并保留 Actions artifacts，但不会发布。
+配方分支 `codex/ireader-automation` 的 push 会对未标记的版本完整构建验证并保留 Actions artifacts，但不会发布或写入失败标记。
 只有 `main` 才发布。其他工作流中的原作者条件、网站、Telegram、旧自动同步任务已从本 fork 的配方分支移除。
 
 ## 应用身份和更新

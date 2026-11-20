@@ -12,11 +12,15 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 TAG = re.compile(r'v?(\d+)\.(\d+)\.(\d+)\Z')
+FAILURE_BRANCH = 'update-manifests'
 
 
-def api(route):
-    request = Request('https://api.github.com/' + route, headers={
+def api(route, *, data=None):
+    request = Request('https://api.github.com/' + route,
+                      data=json.dumps(data).encode() if data is not None else None,
+                      method='PUT' if data is not None else 'GET', headers={
         'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
         'X-GitHub-Api-Version': '2026-03-10',
     })
@@ -24,7 +28,7 @@ def api(route):
         with urlopen(request, timeout=45) as response:
             return json.load(response)
     except HTTPError as error:
-        if error.code == 404:
+        if error.code == 404 and data is None:
             return None
         raise
 
@@ -38,6 +42,12 @@ def coordinates(tag, revision):
         raise ValueError('Upstream version exceeds the Android versionCode allocation')
     version_code = major * 100_000_000 + minor * 1_000_000 + patch * 1_000 + revision
     return f'{major}.{minor}.{patch}-ireader.{revision}', version_code
+
+
+def failure_route(fork, tag):
+    if not TAG.fullmatch(tag):
+        raise ValueError('Invalid upstream tag for failure marker')
+    return f'repos/{fork}/contents/ireader-failures/{tag.removeprefix("v")}.json'
 
 
 def plan(config, requested='', get=api):
@@ -61,8 +71,11 @@ def plan(config, requested='', get=api):
     if obj['type'] != 'commit' or not re.fullmatch(r'[a-f0-9]{40}', obj['sha']):
         raise ValueError('Invalid upstream commit')
     existing = get(f"repos/{config['fork']}/releases/tags/{release_tag}")
+    published = existing and not existing.get('draft')
+    blocked = not published and get(f"{failure_route(config['fork'], tag)}?ref={FAILURE_BRANCH}") is not None
     return dict(
-        needed='false' if existing and not existing.get('draft') else 'true',
+        needed='false' if published or blocked else 'true',
+        blocked='true' if blocked else 'false',
         upstream_tag=tag, upstream_commit=obj['sha'], upstream_url=release['html_url'],
         release_tag=release_tag, version_code=version_code, commit_number=version_code - 10000,
         patch_revision=config['patch_revision'], application_id=config['application_id'],

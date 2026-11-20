@@ -30,6 +30,9 @@ jobs:
     timeout-minutes: 10
     outputs:
       needed: ${{ steps.plan.outputs.needed }}
+      blocked: ${{ steps.plan.outputs.blocked }}
+      planned_attempt: ${{ steps.plan.outputs.planned_attempt }}
+      upstream_tag: ${{ steps.plan.outputs.upstream_tag }}
       upstream_commit: ${{ steps.plan.outputs.upstream_commit }}
       release_tag: ${{ steps.plan.outputs.release_tag }}
       commit_number: ${{ steps.plan.outputs.commit_number }}
@@ -42,7 +45,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_TAG: ${{ inputs.upstream_tag }}
-        run: python3 .github/ireader/release.py --tag "$REQUESTED_TAG" --output release-plan.json
+        run: |
+          python3 .github/ireader/release.py --tag "$REQUESTED_TAG" --output release-plan.json
+          echo "planned_attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Report blocked version
+        if: steps.plan.outputs.blocked == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.plan.outputs.upstream_tag }}
+        run: echo "Skipping upstream $UPSTREAM_TAG after a previous patch or build failure." >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ireader-release-plan
@@ -51,7 +61,8 @@ jobs:
 
   build:
     needs: detect
-    if: needs.detect.outputs.needed == 'true'
+    # Re-running only failed jobs must not reuse a decision made before the failure was recorded.
+    if: needs.detect.outputs.needed == 'true' && needs.detect.outputs.planned_attempt == github.run_attempt
     strategy:
       fail-fast: false
       matrix:
@@ -161,6 +172,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  record-failure:
+    needs: [detect, build]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build.result == 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Remember the failed upstream version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ needs.detect.outputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ needs.detect.outputs.upstream_commit }}
+        run: python3 .github/ireader/record_failure.py
+
   publish:
     needs: [detect, build]
     if: github.ref == 'refs/heads/main'
@@ -190,6 +220,7 @@ jobs:
     needs: [detect, publish]
     if: >-
       always() && github.ref == 'refs/heads/main' && needs.detect.result == 'success' &&
+      needs.detect.outputs.blocked == 'false' &&
       (needs.detect.outputs.needed == 'false' || needs.publish.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
