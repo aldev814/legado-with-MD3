@@ -181,15 +181,18 @@ jobs:
       actions: read
       contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       - name: Remember the failed upstream version
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TAG: ${{ needs.detect.outputs.upstream_tag }}
           UPSTREAM_COMMIT: ${{ needs.detect.outputs.upstream_commit }}
-        run: python3 .github/ireader/record_failure.py
+        # Keep failure recording independent of Action downloads.
+        run: |
+          recipe_dir=$(mktemp -d)
+          for script in release.py record_failure.py; do
+            gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/.github/ireader/$script?ref=$GITHUB_SHA" > "$recipe_dir/$script"
+          done
+          python3 "$recipe_dir/record_failure.py"
 
   publish:
     needs: [detect, build]
