@@ -1,0 +1,8 @@
+{
+  "upstream_tag": "3.26.31",
+  "upstream_commit": "5e9441ee629d8dd2563b2b808ef9e978c89ae36e",
+  "failed_steps": [
+    "Apply patches (stop on any conflict)"
+  ],
+  "run_url": "https://github.com/aldev814/legado-with-MD3/actions/runs/45545896443/attempts/1"
+}
